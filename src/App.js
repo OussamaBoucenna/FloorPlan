@@ -1,23 +1,19 @@
-import logo from './logo.svg';
-import './App.css';
+
+
+import FloorPlanDesigner from "./FloorPlan";
+import FloorPlanPlus from "./FloorPlanPlus";
+import FloorPlanV2 from "./FloorPlanV2";
+import FloorPlanV3 from "./FloorPlanV3";
+import FloorPlanV4 from "./FloorPlanV4";
+
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+    <div>
+     {/* <FloorPlanDesigner/> */}
+     {/* <FloorPlanPlus/> */}
+     {/* <FloorPlanV2/> */}
+     <FloorPlanV4/>
     </div>
   );
 }

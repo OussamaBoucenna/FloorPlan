@@ -24,6 +24,34 @@
   color: white;
 }
 
+.player {
+  width: 20px;
+  height: 20px;
+  background-color: blue;
+  position: absolute;
+}
+.zone {
+  background-color: rgba(255, 165, 0, 0.5);
+  border: 2px solid orange;
+  position: absolute;
+}
+
+.entry {
+  background-color: red;
+  position: absolute;
+}
+
+.poi {
+  width: 10px;
+  height: 10px;
+  background-color: green;
+  position: absolute;
+}
+
+.game-board {
+  border: 2px solid #282c34; /* Largeur, style et couleur */
+}
+
 .App-link {
   color: #61dafb;
 }
@@ -35,4 +63,45 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+
+
+
+
+.floor-plan-designer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 20px;
+}
+
+.controls {
+  margin-bottom: 10px;
+  display: flex;
+  gap: 10px;
+}
+
+.controls button {
+  padding: 8px 12px;
+  cursor: pointer;
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.controls button.active {
+  background-color: #007bff;
+  color: white;
+}
+
+.info {
+  margin-bottom: 10px;
+  font-style: italic;
+}
+
+.debug {
+  color: #666;
+  font-family: monospace;
+  font-size: 12px;
 }
