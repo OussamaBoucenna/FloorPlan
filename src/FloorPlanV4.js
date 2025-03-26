@@ -1,10 +1,65 @@
 import React, { useState, useRef, useEffect } from 'react';
 
+import GeoJsonManipulation  from './GeoJsonManipulation';
+import { getMousePos, isNearPoint, isInsidePolygon , getCellsOnLine , calculateDoorPosition ,createGrid} from './Utils';
+import {displayMeasurements , drawGrid} from './Draw';
+
 const FloorPlanV4 = () => {
+
+  // Icons for different categories
+  const categoryIcons = {
+    furniture: "./hh.svg",
+    electronics: "./hh.svg",
+    plant: "./hh.svg",
+    default: "./hh.svg",
+  };
+
+  const [showPoiForm, setShowPoiForm] = useState(false);
+  const [poiName, setPoiName] = useState('');
+  const [poiCategory, setPoiCategory] = useState('');
+  const [pendingPoi, setPendingPoi] = useState(null);
+  const [draggingId, setDraggingId] = useState(null);
+  const [selectedPOI, setSelectedPOI] = useState(null);
+  const [newPoiName, setNewPoiName] = useState(""); // Pour stocker le nouveau nom
+
+  const handleCreatePoi = () => {
+    if (!poiName || !poiCategory) {
+      alert("Veuillez remplir tous les champs.");
+      return;
+    }
+
+    const newObj = {
+      id: Date.now(),
+      x: pendingPoi.x,
+      y: pendingPoi.y,
+      width: 50,
+      height: 50,
+      type: "rectangle",
+      color: "#ff9966",
+      name: poiName,
+      category: poiCategory,
+      icon: categoryIcons[poiCategory] || categoryIcons.default,
+    };
+
+    setPois([...pois, newObj]);
+    setShowPoiForm(false);
+    setPoiName("");
+    setPoiCategory("");
+    setPendingPoi(null);
+  };
+
+  
+  // When clicking "Objet", activate tool and wait for position
+  const handlePoiTool = () => {
+    setTool('poi');
+    setShowPoiForm(false);
+  };
+  
+
   const [tool, setTool] = useState('wall');
   const [walls, setWalls] = useState([]);
   const [rooms, setRooms] = useState([]);
-  const [objects, setObjects] = useState([]);
+  const [pois, setPois] = useState([]);
   const [doors, setDoors] = useState([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentWall, setCurrentWall] = useState(null);
@@ -15,6 +70,8 @@ const FloorPlanV4 = () => {
   const [currentPath, setCurrentPath] = useState([]);
   const [windows, setWindows] = useState([]);
   const [currentWindow, setCurrentWindow] = useState(null);
+  const [imageInfo, setImageInfo] = useState(null);
+
 
 
 
@@ -41,35 +98,12 @@ const FloorPlanV4 = () => {
       setCanvasSize({ width, height });
     }
   };
-  const drawGrid = (ctx) => {
-    const gridSize = 50;
-    const gridColor = '#e0e0e0';
-    
-    ctx.strokeStyle = gridColor;
-    ctx.lineWidth = 0.5;
-    
-    const startX = Math.floor(-offset.x / scale / gridSize) * gridSize;
-    const startY = Math.floor(-offset.y / scale / gridSize) * gridSize;
-    const endX = startX + canvasSize.width / scale + gridSize * 2;
-    const endY = startY + canvasSize.height / scale + gridSize * 2;
-    
-    for (let x = startX; x < endX; x += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, startY);
-      ctx.lineTo(x, endY);
-      ctx.stroke();
-    }
-    
-    for (let y = startY; y < endY; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(startX, y);
-      ctx.lineTo(endX, y);
-      ctx.stroke();
-    }
-  };
-   
+
+
+
   useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -78,9 +112,16 @@ const FloorPlanV4 = () => {
     ctx.translate(offset.x, offset.y);
     ctx.scale(scale, scale);
     
-    drawGrid(ctx);
+    drawGrid(ctx, offset, scale, canvasSize);
     
-    // Dessiner les murs
+    // Preload icons to prevent flickering
+    const preloadedIcons = {};
+    Object.keys(categoryIcons).forEach((category) => {
+      preloadedIcons[category] = new Image();
+      preloadedIcons[category].src = categoryIcons[category];
+    });
+  
+    // Drawing walls
     ctx.lineWidth = 20;
     ctx.strokeStyle = '#333';
     walls.forEach(wall => {
@@ -98,16 +139,15 @@ const FloorPlanV4 = () => {
       }
       displayMeasurements(ctx, wall.start, wall.end);
     });
-
-    // Dessiner les portes
-    ctx.lineWidth = 20;
+  
+    // Drawing doors
     doors.forEach(door => {
       ctx.strokeStyle = '#8B4513';
       ctx.beginPath();
       ctx.moveTo(door.start.x, door.start.y);
       ctx.lineTo(door.end.x, door.end.y);
       ctx.stroke();
-
+  
       if (selectedItem && selectedItem.type === 'door' && selectedItem.id === door.id) {
         ctx.strokeStyle = '#0066ff';
         ctx.lineWidth = 22;
@@ -115,43 +155,15 @@ const FloorPlanV4 = () => {
       }
     });
     
-    // Dessiner les fenêtres
+    // Drawing windows
     windows.forEach(window => {
-      // Dessiner la ligne de base de la fenêtre
-      ctx.strokeStyle = '#4682B4'; // Couleur bleue pour les fenêtres
+      ctx.strokeStyle = '#4682B4';
       ctx.lineWidth = 20;
       ctx.beginPath();
       ctx.moveTo(window.start.x, window.start.y);
       ctx.lineTo(window.end.x, window.end.y);
       ctx.stroke();
       
-      // Ajouter des hachures pour distinguer les fenêtres des portes
-      const dx = window.end.x - window.start.x;
-      const dy = window.end.y - window.start.y;
-      const length = Math.sqrt(dx * dx + dy * dy);
-      
-      if (length > 0) {
-        const nx = -dy / length * 10; // Vecteur normal (perpendiculaire) avec longueur 10
-        const ny = dx / length * 10;
-        
-        // Dessiner plusieurs lignes perpendiculaires pour représenter le verre
-        ctx.strokeStyle = '#FFFFFF'; // Lignes blanches pour le verre
-        ctx.lineWidth = 3;
-        
-        const segments = 5; // Nombre de segments de hachures
-        for (let i = 1; i <= segments; i++) {
-          const t = i / (segments + 1);
-          const px = window.start.x + dx * t;
-          const py = window.start.y + dy * t;
-          
-          ctx.beginPath();
-          ctx.moveTo(px - nx, py - ny);
-          ctx.lineTo(px + nx, py + ny);
-          ctx.stroke();
-        }
-      }
-      
-      // Mise en évidence si sélectionnée
       if (selectedItem && selectedItem.type === 'window' && selectedItem.id === window.id) {
         ctx.strokeStyle = '#0066ff';
         ctx.lineWidth = 22;
@@ -162,7 +174,7 @@ const FloorPlanV4 = () => {
       }
     });
     
-    // Dessiner les pièces
+    // Drawing rooms
     rooms.forEach(room => {
       ctx.fillStyle = 'rgba(200, 200, 255, 0.3)';
       ctx.strokeStyle = '#0066ff';
@@ -183,26 +195,37 @@ const FloorPlanV4 = () => {
         ctx.stroke();
       }
     });
-    
-    // Dessiner les objets
-    objects.forEach(obj => {
-      ctx.fillStyle = obj.color || '#ff9966';
-      ctx.strokeStyle = '#663300';
-      ctx.lineWidth = 2;
-      
-      ctx.beginPath();
-      ctx.rect(obj.x, obj.y, obj.width, obj.height);
-      ctx.fill();
-      ctx.stroke();
-      
-      if (selectedItem && selectedItem.type === 'object' && selectedItem.id === obj.id) {
-        ctx.strokeStyle = '#ff0000';
-        ctx.lineWidth = 3;
-        ctx.stroke();
+  
+    // Drawing POIs
+    pois.forEach((obj) => {
+      const iconSize = 30;
+      const icon = preloadedIcons[obj.category] || preloadedIcons["default"];
+  
+      // Ensure the image is loaded before drawing
+      if (icon.complete) {
+        ctx.drawImage(icon, obj.x - iconSize / 2, obj.y - iconSize / 2, iconSize, iconSize);
+      } else {
+        icon.onload = () => {
+          ctx.drawImage(icon, obj.x - iconSize / 2, obj.y - iconSize / 2, iconSize, iconSize);
+        };
+      }
+  
+      // Draw poi name and category
+      ctx.font = `${14 / scale}px Arial`;
+      ctx.fillStyle = "#000";
+      ctx.textAlign = "center";
+      ctx.fillText(obj.name, obj.x, obj.y - iconSize / 2 - 5);
+      ctx.fillText(`[${obj.category}]`, obj.x, obj.y - iconSize / 2 - 20);
+  
+      // Highlight selected poi
+      if (selectedItem && selectedItem.type === "poi" && selectedItem.id === obj.id) {
+        ctx.strokeStyle = "#ff0000";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(obj.x - iconSize / 2, obj.y - iconSize / 2, iconSize, iconSize);
       }
     });
-
-    // Dessiner les points de navigation
+  
+    // Drawing navigation points
     if (pathPoints.start) {
       ctx.fillStyle = '#00ff00';
       ctx.beginPath();
@@ -215,10 +238,9 @@ const FloorPlanV4 = () => {
       ctx.arc(pathPoints.end.x, pathPoints.end.y, 5, 0, Math.PI * 2);
       ctx.fill();
     }
-
-    // Dessiner le chemin calculé
+  
+    // Drawing calculated path
     if (currentPath.length > 1) {
-        console.log("Current path reho ktermn 1 : **************************************************************************************************************", currentPath);
       ctx.strokeStyle = '#00ff00';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -229,6 +251,7 @@ const FloorPlanV4 = () => {
       ctx.stroke();
     }
     
+    // Drawing current wall
     if (isDrawing && currentWall) {
       ctx.lineWidth = 20;
       ctx.strokeStyle = '#333';
@@ -238,19 +261,19 @@ const FloorPlanV4 = () => {
       ctx.stroke();
     }
     
-    // Dessiner la fenêtre en cours de création
+    // Drawing current window
     if (isDrawing && currentWindow) {
       ctx.lineWidth = 20;
-      ctx.strokeStyle = '#4682B4'; // Couleur bleue pour les fenêtres
+      ctx.strokeStyle = '#4682B4';
       ctx.beginPath();
       ctx.moveTo(currentWindow.start.x, currentWindow.start.y);
       ctx.lineTo(currentWindow.end.x, currentWindow.end.y);
       ctx.stroke();
       
-      // Afficher les dimensions pendant le dessin
       displayMeasurements(ctx, currentWindow.start, currentWindow.end);
     }
     
+    // Drawing current room
     if (tool === 'room' && currentRoom.length > 0) {
       ctx.strokeStyle = '#0066ff';
       ctx.lineWidth = 2;
@@ -269,7 +292,10 @@ const FloorPlanV4 = () => {
     }
     
     ctx.restore();
-  }, [walls, rooms, objects, doors, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, drawGrid, tool]);
+  }, [walls, rooms, pois, doors, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, drawGrid, tool]);
+  
+  
+  
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (tool === "select" && (event.key === "Delete" || event.key === "Backspace")) {
@@ -280,8 +306,8 @@ const FloorPlanV4 = () => {
           setDoors(doors.filter((d) => d.wallId !== selectedItem.id));
         } else if (selectedItem.type === "room") {
           setRooms(rooms.filter((r) => r.id !== selectedItem.id));
-        } else if (selectedItem.type === "object") {
-          setObjects(objects.filter((o) => o.id !== selectedItem.id));
+        } else if (selectedItem.type === "poi") {
+          setPois(pois.filter((o) => o.id !== selectedItem.id));
         } else if (selectedItem.type === "door") {
           setDoors(doors.filter((d) => d.id !== selectedItem.id));
         }
@@ -292,27 +318,35 @@ const FloorPlanV4 = () => {
   
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [tool, selectedItem, walls, doors, rooms, objects]);
+  }, [tool, selectedItem, walls, doors, rooms, pois]);
  
 
-  const getMousePos = (canvas, evt) => {
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: (evt.clientX - rect.left - offset.x) / scale,
-      y: (evt.clientY - rect.top - offset.y) / scale
-    };
-  };
+ 
 
   const handleMouseDown = (e) => {
     const canvas = canvasRef.current;
-    const mousePos = getMousePos(canvas, e);
-    
+    const mousePos = getMousePos(canvas, e , offset, scale);
+    const { offsetX, offsetY } = e.nativeEvent;
+
+    // Check if the click is on an object
+    const clickedObject = pois.find(obj =>
+      offsetX >= obj.x - 15 && offsetX <= obj.x + 15 &&
+      offsetY >= obj.y - 15 && offsetY <= obj.y + 15
+    );
+
+    if (clickedObject) {
+      setDraggingId(clickedObject.id);
+      setOffset({ x: offsetX - clickedObject.x, y: offsetY - clickedObject.y });
+    }
+   
+    // Middle mouse button or pan tool for panning
     if (e.button === 1 || (e.button === 0 && tool === 'pan')) {
       setIsDragging(true);
       setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
       return;
     }
-
+  
+    // Path tool logic
     if (tool === 'path') {
       if (!pathPoints.start) {
         setPathPoints({ ...pathPoints, start: mousePos });
@@ -325,13 +359,15 @@ const FloorPlanV4 = () => {
       }
       return;
     }
-    
+   
+    // Select tool logic
     if (tool === 'select') {
       const item = findItemAt(mousePos);
       setSelectedItem(item);
       return;
     }
-
+  
+    // Door placement on selected wall
     if (tool === 'door' && selectedItem?.type === 'wall') {
       const wall = walls.find(w => w.id === selectedItem.id);
       if (wall) {
@@ -348,15 +384,18 @@ const FloorPlanV4 = () => {
       }
       return;
     }
-    
+   
+    // Start drawing mode
     setIsDrawing(true);
+  
+    // Different drawing tools
     if (tool === 'window') {
-        setCurrentWindow({
-          id: Date.now(),
-          start: { x: mousePos.x, y: mousePos.y },
-          end: { x: mousePos.x, y: mousePos.y }
-        });
-      }else if (tool === 'wall') {
+      setCurrentWindow({
+        id: Date.now(),
+        start: { x: mousePos.x, y: mousePos.y },
+        end: { x: mousePos.x, y: mousePos.y }
+      });
+    } else if (tool === 'wall') {
       setCurrentWall({
         id: Date.now(),
         start: { x: mousePos.x, y: mousePos.y },
@@ -376,64 +415,33 @@ const FloorPlanV4 = () => {
         setCurrentRoom([]);
         setIsDrawing(false);
       }
-    } else if (tool === 'object') {
-      const newObj = {
-        id: Date.now(),
-        x: mousePos.x,
-        y: mousePos.y,
-        width: 50,
-        height: 50,
-        type: 'rectangle',
-        color: '#ff9966'
-      };
-      setObjects([...objects, newObj]);
-      setIsDrawing(false);
+    } else if (tool === "poi") {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      setPendingPoi({ x, y }); // Store position
+      setShowPoiForm(true);
     } else if (tool === 'erase' && selectedItem) {
+      // Erase logic for different item types
       if (selectedItem.type === 'wall') {
         setWalls(walls.filter(w => w.id !== selectedItem.id));
         setDoors(doors.filter(d => d.wallId !== selectedItem.id));
       } else if (selectedItem.type === 'room') {
         setRooms(rooms.filter(r => r.id !== selectedItem.id));
-      } else if (selectedItem.type === 'object') {
-        setObjects(objects.filter(o => o.id !== selectedItem.id));
+      } else if (selectedItem.type === 'poi') {
+        setPois(pois.filter(o => o.id !== selectedItem.id));
       } else if (selectedItem.type === 'door') {
         setDoors(doors.filter(d => d.id !== selectedItem.id));
-      }
+      } 
       setSelectedItem(null);
     }
   };
 
-  const calculateDoorPosition = (mousePos, wall) => {
-    const wallLength = Math.sqrt(
-      Math.pow(wall.end.x - wall.start.x, 2) + 
-      Math.pow(wall.end.y - wall.start.y, 2)
-    );
-    
-    const t = ((mousePos.x - wall.start.x) * (wall.end.x - wall.start.x) + 
-               (mousePos.y - wall.start.y) * (wall.end.y - wall.start.y)) / 
-              (wallLength * wallLength);
-    
-    if (t < 0.1 || t > 0.9) return null;
-    
-    const doorWidth = 40;
-    const doorCenter = {
-      x: wall.start.x + t * (wall.end.x - wall.start.x),
-      y: wall.start.y + t * (wall.end.y - wall.start.y)
-    };
-    
-    return {
-      start: {
-        x: doorCenter.x - (doorWidth / 2) * (wall.end.x - wall.start.x) / wallLength,
-        y: doorCenter.y - (doorWidth / 2) * (wall.end.y - wall.start.y) / wallLength
-      },
-      end: {
-        x: doorCenter.x + (doorWidth / 2) * (wall.end.x - wall.start.x) / wallLength,
-        y: doorCenter.y + (doorWidth / 2) * (wall.end.y - wall.start.y) / wallLength
-      }
-    };
-  };
-
-
+ 
 
 const calculatePath = (start, end) => {
     if (!start || !end) {
@@ -449,7 +457,7 @@ const calculatePath = (start, end) => {
     const height = 1500; // À remplacer par la hauteur de votre plan
     
     // Créer la grille
-    const grid = createGrid(width, height, cellSize);
+    const grid = createGrid(width, height, cellSize,walls,doors);
     console.log("Grid created with dimensions:", grid.length, "rows ×", grid[0].length, "columns");
     
     // Trouver le chemin entre les points de départ et d'arrivée
@@ -466,172 +474,6 @@ const calculatePath = (start, end) => {
         setCurrentPath([]);
     }
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-const createGrid = (width, height, cellSize, bufferSize = 1) => {
-    const cols = Math.ceil(width / cellSize);
-    const rows = Math.ceil(height / cellSize);
-    const grid = [];
-    
-    // Initialiser toutes les cellules comme traversables
-    for (let y = 0; y < rows; y++) {
-        grid[y] = [];
-        for (let x = 0; x < cols; x++) {
-            grid[y][x] = {
-                x: x * cellSize + cellSize/2,
-                y: y * cellSize + cellSize/2,
-                walkable: true,
-                isDoor: false,
-                isWall: false,
-                isBuffer: false
-            };
-        }
-    }
-    
-    // 1. Identifier d'abord les cellules de porte pour les protéger plus tard
-    const doorCells = new Set(); // Utiliser un Set pour un accès rapide
-    
-    doors.forEach(door => {
-        const cellsOnDoor = getCellsOnLine(
-            Math.floor(door.start.x / cellSize), 
-            Math.floor(door.start.y / cellSize),
-            Math.floor(door.end.x / cellSize), 
-            Math.floor(door.end.y / cellSize)
-        );
-        
-        cellsOnDoor.forEach(cell => {
-            if (cell.y >= 0 && cell.x >= 0 && cell.y < rows && cell.x < cols) {
-                // Marquer cette cellule dans notre Set
-                const key = `${cell.y},${cell.x}`;
-                doorCells.add(key);
-                
-                // Mettre à jour la cellule
-                grid[cell.y][cell.x].isDoor = true;
-            }
-        });
-    });
-    
-    // 2. Marquer les murs
-    walls.forEach(wall => {
-        const cellsOnWall = getCellsOnLine(
-            Math.floor(wall.start.x / cellSize), 
-            Math.floor(wall.start.y / cellSize),
-            Math.floor(wall.end.x / cellSize), 
-            Math.floor(wall.end.y / cellSize)
-        );
-        
-        cellsOnWall.forEach(cell => {
-            if (cell.y >= 0 && cell.x >= 0 && cell.y < rows && cell.x < cols) {
-                const key = `${cell.y},${cell.x}`;
-                
-                // Ne pas marquer comme mur si c'est une porte
-                if (!doorCells.has(key)) {
-                    grid[cell.y][cell.x].walkable = false;
-                    grid[cell.y][cell.x].isWall = true;
-                }
-            }
-        });
-    });
-    
-    // 3. Ajouter une zone de sécurité autour des murs
-    const wallCells = [];
-    for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-            if (grid[y][x].isWall) {
-                wallCells.push({y, x});
-            }
-        }
-    }
-    
-    // Pour chaque cellule de mur, marquer les cellules adjacentes comme buffer
-    wallCells.forEach(wallCell => {
-        for (let dy = -bufferSize; dy <= bufferSize; dy++) {
-            for (let dx = -bufferSize; dx <= bufferSize; dx++) {
-                // Ne pas traiter la cellule du mur elle-même
-                if (dx === 0 && dy === 0) continue;
-                
-                const ny = wallCell.y + dy;
-                const nx = wallCell.x + dx;
-                
-                // Vérifier si la cellule est dans les limites
-                if (ny >= 0 && nx >= 0 && ny < rows && nx < cols) {
-                    const key = `${ny},${nx}`;
-                    
-                    // Ne pas mettre de buffer sur une porte
-                    if (!doorCells.has(key) && !grid[ny][nx].isWall) {
-                        grid[ny][nx].isBuffer = true;
-                        grid[ny][nx].walkable = false;
-                    }
-                }
-            }
-        }
-    });
-    
-    // 4. Finaliser les portes pour s'assurer qu'elles sont toujours traversables
-    doorCells.forEach(key => {
-        const [y, x] = key.split(',').map(Number);
-        grid[y][x].walkable = true;
-        grid[y][x].isDoor = true;
-        grid[y][x].isWall = false;
-        grid[y][x].isBuffer = false;
-    });
-    
-    // Ajouter des logs pour le débogage
-    console.log("Grille créée - Cellules non traversables:", grid.flat().filter(cell => !cell.walkable).length);
-    console.log("Cellules de mur:", grid.flat().filter(cell => cell.isWall).length);
-    console.log("Cellules de buffer:", grid.flat().filter(cell => cell.isBuffer).length);
-    console.log("Cellules de porte:", grid.flat().filter(cell => cell.isDoor).length);
-    
-    return grid;
-};
-
-
-
-
-
-
-
-
-
-
-
-// Fonction pour trouver les cellules sur une ligne (algorithme de Bresenham)
-const getCellsOnLine = (x0, y0, x1, y1) => {
-    const cells = [];
-    const dx = Math.abs(x1 - x0);
-    const dy = Math.abs(y1 - y0);
-    const sx = (x0 < x1) ? 1 : -1;
-    const sy = (y0 < y1) ? 1 : -1;
-    let err = dx - dy;
-    
-    while (true) {
-        cells.push({x: x0, y: y0});
-        
-        if (x0 === x1 && y0 === y1) break;
-        
-        const e2 = 2 * err;
-        if (e2 > -dy) { err -= dy; x0 += sx; }
-        if (e2 < dx) { err += dx; y0 += sy; }
-    }
-    
-    return cells;
-};
-
-
-
-
 
 
 // Fonction de recherche de chemin adaptée à la grille
@@ -757,7 +599,18 @@ console.log("Taille de cellule:", cellSize);
 
   const handleMouseMove = (e) => {
     const canvas = canvasRef.current;
-    const mousePos = getMousePos(canvas, e);
+    const mousePos = getMousePos(canvas, e,offset,scale);
+    if (draggingId !== null) {
+      const { offsetX, offsetY } = e.nativeEvent;
+  
+      setPois(prevObjects =>
+        prevObjects.map(obj =>
+          obj.id === draggingId
+            ? { ...obj, x: offsetX - offset.x, y: offsetY - offset.y }
+            : obj
+        )
+      );
+    }
     
     if (isDragging) {
       setOffset({
@@ -796,6 +649,7 @@ console.log("Taille de cellule:", cellSize);
   };
 
   const handleMouseUp = () => {
+    setDraggingId(null);
     if (isDragging) {
       setIsDragging(false);
       return;
@@ -836,7 +690,7 @@ console.log("Taille de cellule:", cellSize);
     e.preventDefault();
     const delta = e.deltaY < 0 ? 1.1 : 0.9;
     const canvas = canvasRef.current;
-    const mousePos = getMousePos(canvas, e);
+    const mousePos = getMousePos(canvas, e ,offset,scale);
     
     const newScale = scale * delta;
     if (newScale >= 0.1 && newScale <= 10) {
@@ -857,12 +711,12 @@ console.log("Taille de cellule:", cellSize);
       }
     }
 
-    for (const obj of objects) {
+    for (const obj of pois) {
       if (
         pos.x >= obj.x && pos.x <= obj.x + obj.width &&
         pos.y >= obj.y && pos.y <= obj.y + obj.height
       ) {
-        return { type: 'object', id: obj.id };
+        return { type: 'poi', id: obj.id };
       }
     }
     
@@ -917,26 +771,10 @@ console.log("Taille de cellule:", cellSize);
     return Math.sqrt(dx * dx + dy * dy);
   };
 
-  const isNearPoint = (point1, point2, tolerance = 15) => {
-    const dx = point1.x - point2.x;
-    const dy = point1.y - point2.y;
-    return Math.sqrt(dx * dx + dy * dy) < tolerance;
-  };
-  const isInsidePolygon = (point, polygon) => {
-    let inside = false;
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-      const xi = polygon[i].x;
-      const yi = polygon[i].y;
-      const xj = polygon[j].x;
-      const yj = polygon[j].y;
-      
-      const intersect = ((yi > point.y) !== (yj > point.y)) &&
-        (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
-      
-      if (intersect) inside = !inside;
-    }
-    return inside;
-  };
+ 
+
+
+
 
   const calculatePolygonArea = (points) => {
     let area = 0;
@@ -948,442 +786,21 @@ console.log("Taille de cellule:", cellSize);
     return Math.abs(area / 2);
   };
 
-  const saveToJson = () => {
-    const data = {
-      objData: objects,
-      wallData: walls,
-      roomData: rooms,
-      doorData: doors
-    };
-    
-    setJsonData(JSON.stringify(data, null, 2));
-  };
 
-  const loadFromJson = (jsonStr) => {
-    try {
-      const data = JSON.parse(jsonStr);
-      if (data.wallData) setWalls(data.wallData);
-      if (data.roomData) setRooms(data.roomData);
-      if (data.objData) setObjects(data.objData);
-      if (data.doorData) setDoors(data.doorData);
-      setPathPoints({ start: null, end: null });
-      setCurrentPath([]);
-    } catch (e) {
-      alert('Erreur lors du chargement des données: ' + e.message);
-    }
-  };
+ 
 
-  const exportData = () => {
-    const data = {
-      objData: objects,
-      wallData: walls,
-      roomData: rooms,
-      doorData: doors
-    };
-    
-    const jsonStr = JSON.stringify(data);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'floor-plan.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-
-  const exportToGeoJSON = () => {
-    // Create the base GeoJSON structure
-    const geoJSONData = {
-      "type": "FeatureCollection",
-      "features": []
-    };
-  
-    // Process and group walls by roomId to create room features
-    const wallsByRoom = {};
-    
-    // Group walls by roomId
-    walls.forEach(wall => {
-      if (wall.roomId) {
-        if (!wallsByRoom[wall.roomId]) {
-          wallsByRoom[wall.roomId] = [];
-        }
-        wallsByRoom[wall.roomId].push(wall);
-      }
-    });
-  
-    // Create room features from grouped walls
-    Object.keys(wallsByRoom).forEach((roomId, index) => {
-      const roomWalls = wallsByRoom[roomId];
-      
-      // Sort walls to form a continuous polygon
-      // This assumes walls are connected end-to-start
-      let sortedWalls = [];
-      let currentWall = roomWalls[0];
-      sortedWalls.push(currentWall);
-      
-      // Simple algorithm to try to order walls
-      let remainingWalls = [...roomWalls.slice(1)];
-      while (remainingWalls.length > 0) {
-        const endPoint = currentWall.end;
-        const nextWallIndex = remainingWalls.findIndex(w => 
-          (Math.abs(w.start.x - endPoint.x) < 0.1 && Math.abs(w.start.y - endPoint.y) < 0.1) ||
-          (Math.abs(w.end.x - endPoint.x) < 0.1 && Math.abs(w.end.y - endPoint.y) < 0.1)
-        );
-        
-        if (nextWallIndex === -1) break; // Can't find a connecting wall
-        
-        currentWall = remainingWalls[nextWallIndex];
-        // Ensure the wall direction is consistent
-        if (Math.abs(currentWall.end.x - endPoint.x) < 0.1 && Math.abs(currentWall.end.y - endPoint.y) < 0.1) {
-          // Need to reverse the wall
-          const temp = currentWall.start;
-          currentWall.start = currentWall.end;
-          currentWall.end = temp;
-        }
-        
-        sortedWalls.push(currentWall);
-        remainingWalls.splice(nextWallIndex, 1);
-      }
-  
-      // Extract polygon coordinates from sorted walls
-      const polygonCoords = sortedWalls.map(wall => [wall.start.x, wall.start.y]);
-      // Close the polygon by adding the first point again
-      polygonCoords.push([sortedWalls[0].start.x, sortedWalls[0].start.y]);
-      
-      // Calculate the bounding box
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      polygonCoords.forEach(coord => {
-        minX = Math.min(minX, coord[0]);
-        minY = Math.min(minY, coord[1]);
-        maxX = Math.max(maxX, coord[0]);
-        maxY = Math.max(maxY, coord[1]);
-      });
-      
-      // Create the room feature
-      const roomFeature = {
-        "type": "Feature",
-        "id": parseInt(roomId),
-        "geometry": {
-          "type": "Polygon",
-          "coordinates": [polygonCoords]
-        },
-        "properties": {
-          "class_id": 3,
-          "class_name": "room",
-          "confidence": 0.95, // Default confidence
-          "x1": minX,
-          "y1": minY,
-          "x2": maxX,
-          "y2": maxY,
-          "width": maxX - minX,
-          "height": maxY - minY,
-          "area": (maxX - minX) * (maxY - minY)
-        }
-      };
-      
-      geoJSONData.features.push(roomFeature);
-    });
-  
-    // Add individual walls that are not associated with rooms
-    walls.filter(wall => !wall.roomId).forEach((wall, index) => {
-      const wallFeature = {
-        "type": "Feature",
-        "id": 1000 + index, // Use a high number to avoid ID collisions
-        "geometry": {
-          "type": "LineString",
-          "coordinates": [
-            [wall.start.x, wall.start.y],
-            [wall.end.x, wall.end.y]
-          ]
-        },
-        "properties": {
-          "class_id": 1,
-          "class_name": "wall",
-          "width": wall.width || 1,
-          "id": wall.id
-        }
-      };
-      geoJSONData.features.push(wallFeature);
-    });
-  
-    // Add doors if present
-    if (doors && doors.length > 0) {
-      doors.forEach((door, index) => {
-        const doorFeature = {
-          "type": "Feature",
-          "id": 2000 + index, // Use a high number to avoid ID collisions
-          "geometry": {
-            "type": "LineString",
-            "coordinates": [
-              [door.start.x, door.start.y],
-              [door.end.x, door.end.y]
-            ]
-          },
-          "properties": {
-            "class_id": 2,
-            "class_name": "door",
-            "width": door.width || 2,
-            "id": door.id
-          }
-        };
-        geoJSONData.features.push(doorFeature);
-      });
-    }
-  
-    // Create and download the GeoJSON file
-    const jsonStr = JSON.stringify(geoJSONData, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/geo+json' });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'floor-plan.geojson';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    console.log("GeoJSON exported successfully");
-    return true;
-  };
-
-
-
-
-
-
-  const initializeFloorPlanFromGeoJSON = (geoJSONData) => {
-    const newWalls = [];
-    const newRooms = [];
-    const newDoors = [];
-    const newWindows = [];
-    let imageInfo = null;
-    
-    // Parcourir toutes les features du GeoJSON
-    geoJSONData.features.forEach(feature => {
-      // Si c'est une limite d'image
-      if (feature.properties.type === "ImageBoundary") {
-        imageInfo = {
-          width: feature.properties.width,
-          height: feature.properties.height,
-          filename: feature.properties.filename
-        };
-        console.log("ImageBoundary trouvé:", feature.properties);
-      }
-      
-      // Si c'est un mur
-      else if (feature.properties.class_name === "wall") {
-        if (feature.geometry.type === "Polygon") {
-          const polygonCoords = feature.geometry.coordinates[0];
-          
-          // Si c'est un mur rectangulaire fin (comme dans votre exemple), 
-          // on peut ne créer qu'un seul segment central au lieu de 4 segments
-          if (polygonCoords.length === 5) { // Polygone fermé (5 points où le premier et le dernier sont identiques)
-            const minX = Math.min(...polygonCoords.map(p => p[0]));
-            const maxX = Math.max(...polygonCoords.map(p => p[0]));
-            const minY = Math.min(...polygonCoords.map(p => p[1]));
-            const maxY = Math.max(...polygonCoords.map(p => p[1]));
-            
-            const width = maxX - minX;
-            const height = maxY - minY;
-            
-            // Si c'est un mur fin (une dimension beaucoup plus grande que l'autre)
-            if (width / height > 5 || height / width > 5) {
-              // Mur horizontal ou vertical
-              const isVertical = height > width;
-              
-              const wall = {
-                id: `wall-${feature.properties.confidence || Date.now()}`,
-                start: isVertical 
-                  ? { x: (minX + maxX) / 2, y: minY } 
-                  : { x: minX, y: (minY + maxY) / 2 },
-                end: isVertical 
-                  ? { x: (minX + maxX) / 2, y: maxY } 
-                  : { x: maxX, y: (minY + maxY) / 2 },
-                width: isVertical ? width : height, // L'épaisseur du mur
-                properties: { ...feature.properties }
-              };
-              newWalls.push(wall);
-              return; // Sortir de cette itération pour éviter de traiter ce polygone comme segments multiples
-            }
-          }
-          
-          // Sinon, traiter normalement comme segments multiples
-          for (let i = 0; i < polygonCoords.length - 1; i++) {
-            const wall = {
-              id: `wall-${feature.properties.confidence || Date.now()}-${i}`,
-              start: { x: polygonCoords[i][0], y: polygonCoords[i][1] },
-              end: { x: polygonCoords[i+1][0], y: polygonCoords[i+1][1] },
-              width: 1,
-              properties: { ...feature.properties }
-            };
-            newWalls.push(wall);
-          }
-        }
-      }
-      
-      // Si c'est une porte
-      else if (feature.properties.class_name === "door") {
-        if (feature.geometry.type === "Polygon") {
-          // Utiliser les propriétés x1, y1, x2, y2 directement
-          const centerX = (feature.properties.x1 + feature.properties.x2) / 2;
-          const centerY = (feature.properties.y1 + feature.properties.y2) / 2;
-          const width = Math.abs(feature.properties.x2 - feature.properties.x1);
-          const height = Math.abs(feature.properties.y2 - feature.properties.y1);
-          
-          // Déterminer si la porte est horizontale ou verticale
-          const isHorizontal = width > height;
-          
-          const door = {
-            id: `door-${feature.properties.confidence || Date.now()}`,
-            position: { x: centerX, y: centerY },
-            width: width,
-            height: height,
-            rotation: isHorizontal ? 0 : 90, // 0 pour horizontale, 90 pour verticale
-            properties: { ...feature.properties }
-          };
-          newDoors.push(door);
-        }
-      }
-      
-      // Si c'est une fenêtre
-      else if (feature.properties.class_name === "window") {
-        if (feature.geometry.type === "Polygon") {
-          // Utiliser les propriétés x1, y1, x2, y2 directement
-          const centerX = (feature.properties.x1 + feature.properties.x2) / 2;
-          const centerY = (feature.properties.y1 + feature.properties.y2) / 2;
-          const width = Math.abs(feature.properties.x2 - feature.properties.x1);
-          const height = Math.abs(feature.properties.y2 - feature.properties.y1);
-          
-          // Déterminer si la fenêtre est horizontale ou verticale
-          const isHorizontal = width > height;
-          
-          const window = {
-            id: `window-${feature.properties.confidence || Date.now()}`,
-            position: { x: centerX, y: centerY },
-            width: width,
-            height: height,
-            rotation: isHorizontal ? 0 : 90, // 0 pour horizontale, 90 pour verticale
-            properties: { ...feature.properties }
-          };
-          newWindows.push(window);
-        }
-      }
-      
-      // Si c'est une pièce
-      else if (feature.properties.class_name === "room") {
-        // Extraire les coordonnées du polygone
-        const polygonCoords = feature.geometry.coordinates[0];
-        
-        // Transformer les coordonnées pour votre format de room
-        const roomPoints = polygonCoords.map(point => ({ x: point[0], y: point[1] }));
-        
-        const room = {
-          id: `room-${feature.properties.confidence || Date.now()}`,
-          points: roomPoints,
-          properties: { ...feature.properties }
-        };
-        
-        newRooms.push(room);
-        
-        // Générer des murs à partir des arêtes du polygone
-        for (let i = 0; i < polygonCoords.length - 1; i++) {
-          const wall = {
-            id: `wall-room-${feature.properties.confidence || Date.now()}-${i}`,
-            start: { x: polygonCoords[i][0], y: polygonCoords[i][1] },
-            end: { x: polygonCoords[i+1][0], y: polygonCoords[i+1][1] },
-            width: 1,
-            roomId: feature.properties.confidence
-          };
-          newWalls.push(wall);
-        }
-      }
-    });
-    
-    // Filtrer les murs pour éliminer les doublons
-    const uniqueWalls = [];
-    const tolerance = 1; // Tolérance en pixels pour considérer des points comme identiques
-  
-    // Fonction pour vérifier si deux points sont presque identiques
-    const pointsAreClose = (p1, p2) => {
-      return Math.abs(p1.x - p2.x) < tolerance && Math.abs(p1.y - p2.y) < tolerance;
-    };
-  
-    // Fonction pour vérifier si deux segments sont presque identiques (même si inversés)
-    const segmentsAreAlmostSame = (seg1, seg2) => {
-      return (
-        (pointsAreClose(seg1.start, seg2.start) && pointsAreClose(seg1.end, seg2.end)) ||
-        (pointsAreClose(seg1.start, seg2.end) && pointsAreClose(seg1.end, seg2.start))
-      );
-    };
-  
-    // Filtrer les murs pour éliminer les doublons
-    newWalls.forEach(wall => {
-      if (!uniqueWalls.some(existingWall => segmentsAreAlmostSame(wall, existingWall))) {
-        uniqueWalls.push(wall);
-      }
-    });
-  
-    return { walls: uniqueWalls, rooms: newRooms, doors: newDoors, windows: newWindows, imageInfo };
-  };
-
-
-
-
-
-
-
-// Fonction pour charger le GeoJSON à partir d'un fichier
-  const loadFloorPlanFromFile = async (file) => {
-    try {
-      const jsonText = await file.text();
-      const geoJSONData = JSON.parse(jsonText);
-      const { walls, rooms, doors, imageInfo } = initializeFloorPlanFromGeoJSON(geoJSONData);
-      
-      // Mettre à jour l'état de votre application avec le plan d'étage
-      setWalls(walls);
-       setRooms(rooms);
-      setDoors([]);
-      console.log("Murs importés:", walls);
-console.log("Portes importées:", doors);
-console.log("Points du chemin:", pathPoints);
-      
-      // Optionnel: Mettre à jour la taille du canvas si nécessaire
-      if (imageInfo) {
-        // Vous pouvez décider comment vous souhaitez gérer la taille de l'image
-        // Par exemple, vous pourriez vouloir adapter l'échelle
-        const ratio = Math.min(
-          canvasSize.width / imageInfo.width,
-          canvasSize.height / imageInfo.height
-        );
-        setScale(ratio);
-        
-        // Centrer l'image
-        setOffset({
-          x: (canvasSize.width - imageInfo.width * ratio) / 2,
-          y: (canvasSize.height - imageInfo.height * ratio) / 2
-        });
-      }
-      
-      // Mettre à jour le JSON affiché si vous le souhaitez
-      setJsonData(jsonText);
-      
-      return true;
-    } catch (error) {
-      console.error("Erreur lors du chargement du fichier GeoJSON:", error);
-      return false;
-    }
-  };
-  
-  // Dans votre composant React
-  const handleGeoJSONUpload = async (event) => {
+  const handleGeoJSONUploadModel = async (event) => {
     const file = event.target.files[0];
     if (file) {
-      const success = await loadFloorPlanFromFile(file);
+      const success = await GeoJsonManipulation.loadFloorPlanFromFileModel(file,setWalls, 
+        setRooms, 
+        setDoors, 
+        setWindows, 
+        setJsonData,
+        setImageInfo,
+        setScale,
+        setOffset,
+        canvasSize);
       if (success) {
         console.log("Plan d'étage chargé avec succès");
         // Réinitialiser le chemin actuel et les points de navigation
@@ -1398,47 +815,75 @@ console.log("Points du chemin:", pathPoints);
 
 
 
-
-
-
-  const displayMeasurements = (ctx, startPoint, endPoint) => {
-    // Calcul de la distance réelle en mètres (supposons que 1 unité = 1 cm)
-    const pixelDistance = Math.sqrt(
-      Math.pow(endPoint.x - startPoint.x, 2) + 
-      Math.pow(endPoint.y - startPoint.y, 2)
-    );
-    const SCALE_FACTOR = 0.02; // Exemple : 1 pixel = 1 cm = 0.01 m
-    
-    // Conversion en mètres (ajustez le facteur selon votre échelle)
-    const meterDistance = (pixelDistance *SCALE_FACTOR).toFixed(2);
-    
-    // Position pour l'affichage (milieu du mur)
-    const midX = (startPoint.x + endPoint.x) / 2;
-    const midY = (startPoint.y + endPoint.y) / 2;
-    
-    // Affichage de la mesure
-    ctx.save();
-    ctx.fillStyle = 'black';
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 2;
-    ctx.font = '14px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const text = `${meterDistance} m`;
-    ctx.strokeText(text, midX, midY - 10);
-    ctx.fillText(text, midX, midY - 10);
-    ctx.restore();
+   const handleGeoJSONUploadSystem = async (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const success = await GeoJsonManipulation.loadFloorPlanFromFileSysteme(file,setWalls, 
+        setPois, 
+        setDoors, 
+        setWindows, 
+        setJsonData,
+        setImageInfo,
+        setScale,
+        setOffset,
+        canvasSize);
+      if (success) {
+        console.log("Plan d'étage chargé avec succès");
+        // Réinitialiser le chemin actuel et les points de navigation
+        setPathPoints({ start: null, end: null });
+        setCurrentPath([]);
+        setSelectedItem(null);
+      } else {
+        console.error("Échec du chargement du plan d'étage");
+      }
+    }
   };
 
 
 
+  const handleNameChange = (e) => {
+    setNewPoiName(e.target.value);
+  };
+  
+  const updatePOIName = () => {
+    setPois(prevObjects =>
+      prevObjects.map(obj =>
+        obj.id === selectedPOI.id ? { ...obj, name: newPoiName } : obj
+      )
+    );
+    setSelectedPOI(null); // Fermer la modification après sauvegarde
+  };
+
+  const deletePOI = () => {
+    setPois(prevObjects => prevObjects.filter(obj => obj.id !== selectedPOI.id));
+    setSelectedPOI(null); // Fermer l'interface après suppression
+  };
 
 
+  const handleCanvasClick = (e) => {
+    const { offsetX, offsetY } = e.nativeEvent;
 
+    const clickedPOI = pois.find(obj =>
+      offsetX >= obj.x - 15 && offsetX <= obj.x + 15 &&
+      offsetY >= obj.y - 15 && offsetY <= obj.y + 15
+    );
 
+    if (clickedPOI) {
+      setSelectedPOI(clickedPOI);
+      setNewPoiName(clickedPOI.name); // Pré-remplit avec l'ancien nom
+    }
+    if (tool === "poi") {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
 
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
 
-
+      setPendingPoi({ x, y }); // Store position
+      setShowPoiForm(true);
+    }
+  };
 
 
 
@@ -1463,7 +908,7 @@ console.log("Points du chemin:", pathPoints);
               if (confirm('Voulez-vous créer un nouveau projet? Toutes les modifications non sauvegardées seront perdues.')) {
                 setWalls([]);
                 setRooms([]);
-                setObjects([]);
+                setPois([]);
                 setDoors([]);
                 setWindows([]);
                 setCurrentRoom([]);
@@ -1478,22 +923,35 @@ console.log("Points du chemin:", pathPoints);
           </button>
           <button 
             className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
-            onClick={exportToGeoJSON}
+            onClick={ ()=> GeoJsonManipulation.exportToGeoJSON(walls, pois, doors, windows)}
           >
             Exporter
           </button>
           <input
             type="file"
-            id="fileInput"
+            id="fileInputModel"
             accept=".geojson"
             className="hidden"
-            onChange={handleGeoJSONUpload}
+            onChange={handleGeoJSONUploadModel}
           />
           <button 
             className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
-            onClick={() => document.getElementById('fileInput').click()}
+            onClick={() => document.getElementById('fileInputModel').click()}
           >
-            Importer
+            Importer from modele
+          </button>
+          <input
+            type="file"
+            id="fileInputSysteme"
+            accept=".geojson"
+            className="hidden"
+            onChange={handleGeoJSONUploadSystem}
+          />
+          <button 
+            className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+            onClick={() => document.getElementById('fileInputSysteme').click()}
+          >
+            Importer from System
           </button>
         </div>
       </div>
@@ -1521,10 +979,10 @@ console.log("Points du chemin:", pathPoints);
               Pièce
             </button>
             <button
-              className={`w-full px-3 py-2 rounded ${tool === 'object' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-              onClick={() => setTool('object')}
-            >     
-              Objet
+              className={`w-full px-3 py-2 rounded ${tool === 'poi' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+              onClick={handlePoiTool}
+            >
+              POI
             </button>
             <button
                 className={`w-full px-3 py-2 rounded ${tool === 'window' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
@@ -1579,12 +1037,6 @@ console.log("Points du chemin:", pathPoints);
             </button>
           </div>
 
-          <button 
-            className="w-full px-3 py-2 mt-auto bg-blue-500 text-white rounded hover:bg-blue-600"
-            onClick={saveToJson}
-          >
-            Générer JSON
-          </button>
         </div>
 
         <div className="flex-1 flex flex-col">
@@ -1592,6 +1044,7 @@ console.log("Points du chemin:", pathPoints);
             ref={canvasContainerRef} 
             className="flex-1 overflow-hidden relative"
             onWheel={handleWheel}
+            onClick={handleCanvasClick}
           >
             <canvas
               ref={canvasRef}
@@ -1606,27 +1059,79 @@ console.log("Points du chemin:", pathPoints);
           </div>
 
           <div className="h-48 bg-gray-100 border-t p-4 overflow-auto">
-            <h2 className="font-bold mb-2">Données JSON</h2>
-            <textarea
-              className="w-full h-32 p-2 border rounded font-mono text-sm"
-              value={jsonData}
-              onChange={(e) => setJsonData(e.target.value)}
-              placeholder="Les données JSON apparaîtront ici après avoir cliqué sur 'Générer JSON'"
+            
+          </div>
+        </div>
+      </div>
+      {showPoiForm && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white p-4 rounded shadow-lg">
+            <h2 className="text-lg font-bold mb-2">Ajouter un Objet</h2>
+            <input
+              type="text"
+              placeholder="Nom de l'objet"
+              value={poiName}
+              onChange={(e) => setPoiName(e.target.value)}
+              className="border p-2 rounded w-full mb-2"
             />
-            <div className="flex justify-end mt-2">
-              <button 
-                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-                onClick={() => loadFromJson(jsonData)}
-                disabled={!jsonData}
-              >
-                Charger ce JSON
+            <select
+              value={poiCategory}
+              onChange={(e) => setPoiCategory(e.target.value)}
+              className="border p-2 rounded w-full mb-2"
+            >
+              <option value="">Sélectionner une catégorie</option>
+              <option value="furniture">Mobilier</option>
+              <option value="electronics">Électronique</option>
+              <option value="plant">Plante</option>
+            </select>
+            <div className="flex justify-end gap-2">
+              <button className="px-3 py-1 bg-gray-400 text-white rounded" onClick={() => setShowPoiForm(false)}>
+                Annuler
+              </button>
+              <button className="px-3 py-1 bg-blue-500 text-white rounded" onClick={handleCreatePoi}>
+                Ajouter
               </button>
             </div>
           </div>
         </div>
+      )}
+       {selectedPOI && (
+      <div className="absolute top-10 left-10 bg-white p-4 shadow-lg border rounded">
+        <h2 className="text-lg font-bold">Modifier / Supprimer le POI</h2>
+        
+        <label className="block mt-2 text-sm font-medium">Nom du POI :</label>
+        <input 
+          type="text" 
+          value={newPoiName} 
+          onChange={handleNameChange} 
+          className="w-full border p-2 rounded mt-1"
+        />
+
+        <p className="text-sm text-gray-600 mt-2">
+          <strong>Catégorie:</strong> {selectedPOI.category}
+        </p>
+        <p className="text-sm text-gray-600">
+          <strong>Coordonnées:</strong> (X: {selectedPOI.x}, Y: {selectedPOI.y})
+        </p>
+
+        <div className="mt-4 flex space-x-2">
+          <button onClick={updatePOIName} className="px-3 py-1 bg-blue-500 text-white rounded">
+            Sauvegarder
+          </button>
+          <button onClick={deletePOI} className="px-3 py-1 bg-red-500 text-white rounded">
+            Supprimer
+          </button>
+          <button onClick={() => setSelectedPOI(null)} className="px-3 py-1 bg-gray-500 text-white rounded">
+            Annuler
+          </button>
+        </div>
       </div>
+    )}
     </div>
   );
 };
 
 export default FloorPlanV4;
+
+
+// calculate path //
