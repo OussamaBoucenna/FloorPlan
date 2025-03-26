@@ -99,6 +99,30 @@ const FloorPlanV4 = () => {
     }
   };
 
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    pois.forEach((obj) => {
+      const iconSize = 30;
+      const img = new Image();
+      img.src = obj.icon; // Use category-based icon
+
+      img.onload = () => {
+        ctx.drawImage(img, obj.x - iconSize / 2, obj.y - iconSize / 2, iconSize, iconSize);
+      };
+
+      // Draw text
+      ctx.font = "14px Arial";
+      ctx.fillStyle = "#000";
+      ctx.textAlign = "center";
+      ctx.fillText(obj.name, obj.x, obj.y - iconSize / 2 - 5);
+      ctx.fillText(`[${obj.category}]`, obj.x, obj.y - iconSize / 2 - 20);
+    });
+  }, [pois]);
 
 
   useEffect(() => {
@@ -214,8 +238,6 @@ const FloorPlanV4 = () => {
       ctx.font = `${14 / scale}px Arial`;
       ctx.fillStyle = "#000";
       ctx.textAlign = "center";
-      ctx.fillText(obj.name, obj.x, obj.y - iconSize / 2 - 5);
-      ctx.fillText(`[${obj.category}]`, obj.x, obj.y - iconSize / 2 - 20);
   
       // Highlight selected poi
       if (selectedItem && selectedItem.type === "poi" && selectedItem.id === obj.id) {
@@ -771,10 +793,6 @@ console.log("Taille de cellule:", cellSize);
     return Math.sqrt(dx * dx + dy * dy);
   };
 
- 
-
-
-
 
   const calculatePolygonArea = (points) => {
     let area = 0;
@@ -840,7 +858,6 @@ console.log("Taille de cellule:", cellSize);
   };
 
 
-
   const handleNameChange = (e) => {
     setNewPoiName(e.target.value);
   };
@@ -859,7 +876,6 @@ console.log("Taille de cellule:", cellSize);
     setSelectedPOI(null); // Fermer l'interface après suppression
   };
 
-
   const handleCanvasClick = (e) => {
     const { offsetX, offsetY } = e.nativeEvent;
 
@@ -867,7 +883,7 @@ console.log("Taille de cellule:", cellSize);
       offsetX >= obj.x - 15 && offsetX <= obj.x + 15 &&
       offsetY >= obj.y - 15 && offsetY <= obj.y + 15
     );
-
+      console.log("====click")
     if (clickedPOI) {
       setSelectedPOI(clickedPOI);
       setNewPoiName(clickedPOI.name); // Pré-remplit avec l'ancien nom
@@ -884,17 +900,6 @@ console.log("Taille de cellule:", cellSize);
       setShowPoiForm(true);
     }
   };
-
-
-
-
-
-
-
-
-
-
-
 
   return (
     <div className="flex flex-col h-screen">
