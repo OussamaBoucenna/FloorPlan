@@ -7,11 +7,11 @@ const getMousePos = (canvas, evt , offset , scale) => {
   };
 
 
-  const isNearPoint = (point1, point2, tolerance = 15) => {
-    const dx = point1.x - point2.x;
-    const dy = point1.y - point2.y;
-    return Math.sqrt(dx * dx + dy * dy) < tolerance;
-  };
+const isNearPoint = (point1, point2, threshold = 10) => {
+  const dx = point1.x - point2.x;
+  const dy = point1.y - point2.y;
+  return Math.sqrt(dx * dx + dy * dy) < threshold;
+};
 
 
   const isInsidePolygon = (point, polygon) => {
@@ -210,7 +210,21 @@ const createGrid = (width, height, cellSize,walls,doors , bufferSize = 1) => {
     return grid;
 };
 
+export const calculatePolygonArea = (points) => {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    area += points[i].x * points[j].y;
+    area -= points[j].x * points[i].y;
+  }
+  return Math.abs(area / 2);
+};
 
 
-
+export const snapToGrid = (point, gridSize = 10) => {
+  return {
+    x: Math.round(point.x / gridSize) * gridSize,
+    y: Math.round(point.y / gridSize) * gridSize
+  };
+};
   export  {getMousePos , isNearPoint,isInsidePolygon , getCellsOnLine , calculateDoorPosition , createGrid}

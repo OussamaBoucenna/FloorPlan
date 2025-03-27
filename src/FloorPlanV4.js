@@ -1,17 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react';
-
+import { movePOI, stopDraggingPOI, zoomPOI , findClickedPOI, getCanvasClickPosition ,handPoi ,drawPOIs,handlePOI,handleObjectDrag } from './pois';
+import {updateCanvasSize} from './canvasUtils'
 import GeoJsonManipulation  from './GeoJsonManipulation';
-import { getMousePos, isNearPoint, isInsidePolygon , getCellsOnLine , calculateDoorPosition ,createGrid} from './Utils';
+import { getMousePos, calculateDoorPosition,calculatePolygonArea} from './Utils';
 import {displayMeasurements , drawGrid} from './Draw';
+import {drawWalls} from './handlers/handleWalls'
+import {drawDoors ,handleDoor } from './handlers/handleDoors'
+import {drawWindows } from './handlers/handleWindows'
+import {drawRooms ,handleRoomDrawing,drawCurrentRoom} from './handlers/handleRooms'
+import {handlePan} from './handlers/handlePan';
+import {handlePath ,drawPath} from './handlers/handlNavigation';
+import {handleSelect} from './handlers/handleSelect';
+import {handleErase,handleDrawingStart,handleDrawingEnd,isNearPoint } from './handlers/handleErase';
 
 const FloorPlanV4 = () => {
 
   // Icons for different categories
   const categoryIcons = {
-    furniture: "./hh.svg",
+    furniture: "./bur.svg",
     electronics: "./hh.svg",
-    plant: "./hh.svg",
-    default: "./hh.svg",
+    plant: "./stair.svg",
+    default: "./logo.svg",
   };
 
   const [showPoiForm, setShowPoiForm] = useState(false);
@@ -21,41 +30,6 @@ const FloorPlanV4 = () => {
   const [draggingId, setDraggingId] = useState(null);
   const [selectedPOI, setSelectedPOI] = useState(null);
   const [newPoiName, setNewPoiName] = useState(""); // Pour stocker le nouveau nom
-
-  const handleCreatePoi = () => {
-    if (!poiName || !poiCategory) {
-      alert("Veuillez remplir tous les champs.");
-      return;
-    }
-
-    const newObj = {
-      id: Date.now(),
-      x: pendingPoi.x,
-      y: pendingPoi.y,
-      width: 50,
-      height: 50,
-      type: "rectangle",
-      color: "#ff9966",
-      name: poiName,
-      category: poiCategory,
-      icon: categoryIcons[poiCategory] || categoryIcons.default,
-    };
-
-    setPois([...pois, newObj]);
-    setShowPoiForm(false);
-    setPoiName("");
-    setPoiCategory("");
-    setPendingPoi(null);
-  };
-
-  
-  // When clicking "Objet", activate tool and wait for position
-  const handlePoiTool = () => {
-    setTool('poi');
-    setShowPoiForm(false);
-  };
-  
-
   const [tool, setTool] = useState('wall');
   const [walls, setWalls] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -71,13 +45,13 @@ const FloorPlanV4 = () => {
   const [windows, setWindows] = useState([]);
   const [currentWindow, setCurrentWindow] = useState(null);
   const [imageInfo, setImageInfo] = useState(null);
-
-
-
-
-
-
-
+  const { handlePoiTool, handleCreatePoi } = handPoi(
+    tool, setTool, setShowPoiForm, 
+    poiName, setPoiName, 
+    poiCategory, setPoiCategory,
+    pendingPoi, setPendingPoi, 
+    setPois, pois, categoryIcons
+  );
   const canvasRef = useRef(null);
   const canvasContainerRef = useRef(null);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
@@ -87,236 +61,41 @@ const FloorPlanV4 = () => {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
-    updateCanvasSize();
-    window.addEventListener('resize', updateCanvasSize);
-    return () => window.removeEventListener('resize', updateCanvasSize);
-  }, []);
-
-  const updateCanvasSize = () => {
-    if (canvasContainerRef.current) {
-      const { width, height } = canvasContainerRef.current.getBoundingClientRect();
-      setCanvasSize({ width, height });
-    }
-  };
+    const handleResize = () => updateCanvasSize(canvasContainerRef, setCanvasSize);
+    handleResize(); 
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [canvasContainerRef, setCanvasSize]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    
     const ctx = canvas.getContext("2d");
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    pois.forEach((obj) => {
-      const iconSize = 30;
-      const img = new Image();
-      img.src = obj.icon; // Use category-based icon
-
-      img.onload = () => {
-        ctx.drawImage(img, obj.x - iconSize / 2, obj.y - iconSize / 2, iconSize, iconSize);
-      };
-
-      // Draw text
-      ctx.font = "14px Arial";
-      ctx.fillStyle = "#000";
-      ctx.textAlign = "center";
-      ctx.fillText(obj.name, obj.x, obj.y - iconSize / 2 - 5);
-      ctx.fillText(`[${obj.category}]`, obj.x, obj.y - iconSize / 2 - 20);
-    });
-  }, [pois]);
-
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
     ctx.save();
     ctx.translate(offset.x, offset.y);
     ctx.scale(scale, scale);
-    
+  
     drawGrid(ctx, offset, scale, canvasSize);
     
-    // Preload icons to prevent flickering
+    // Preload icons
     const preloadedIcons = {};
     Object.keys(categoryIcons).forEach((category) => {
       preloadedIcons[category] = new Image();
       preloadedIcons[category].src = categoryIcons[category];
     });
   
-    // Drawing walls
-    ctx.lineWidth = 20;
-    ctx.strokeStyle = '#333';
-    walls.forEach(wall => {
-      ctx.beginPath();
-      ctx.moveTo(wall.start.x, wall.start.y);
-      ctx.lineTo(wall.end.x, wall.end.y);
-      ctx.stroke();
-      
-      if (selectedItem && selectedItem.type === 'wall' && selectedItem.id === wall.id) {
-        ctx.strokeStyle = '#0066ff';
-        ctx.lineWidth = 22;
-        ctx.stroke();
-        ctx.lineWidth = 20;
-        ctx.strokeStyle = '#333';
-      }
-      displayMeasurements(ctx, wall.start, wall.end);
-    });
+    drawWalls(ctx, walls, selectedItem, displayMeasurements);
+    drawDoors(ctx, doors, selectedItem);
+    drawWindows(ctx, windows, selectedItem, displayMeasurements);
+    drawRooms(ctx, rooms, selectedItem);
+    drawPOIs(ctx, pois, selectedItem, preloadedIcons, scale);
+    drawPath(ctx, pathPoints, currentPath);
+    drawCurrentRoom(ctx, currentRoom, isDrawing);
   
-    // Drawing doors
-    doors.forEach(door => {
-      ctx.strokeStyle = '#8B4513';
-      ctx.beginPath();
-      ctx.moveTo(door.start.x, door.start.y);
-      ctx.lineTo(door.end.x, door.end.y);
-      ctx.stroke();
-  
-      if (selectedItem && selectedItem.type === 'door' && selectedItem.id === door.id) {
-        ctx.strokeStyle = '#0066ff';
-        ctx.lineWidth = 22;
-        ctx.stroke();
-      }
-    });
-    
-    // Drawing windows
-    windows.forEach(window => {
-      ctx.strokeStyle = '#4682B4';
-      ctx.lineWidth = 20;
-      ctx.beginPath();
-      ctx.moveTo(window.start.x, window.start.y);
-      ctx.lineTo(window.end.x, window.end.y);
-      ctx.stroke();
-      
-      if (selectedItem && selectedItem.type === 'window' && selectedItem.id === window.id) {
-        ctx.strokeStyle = '#0066ff';
-        ctx.lineWidth = 22;
-        ctx.beginPath();
-        ctx.moveTo(window.start.x, window.start.y);
-        ctx.lineTo(window.end.x, window.end.y);
-        ctx.stroke();
-      }
-    });
-    
-    // Drawing rooms
-    rooms.forEach(room => {
-      ctx.fillStyle = 'rgba(200, 200, 255, 0.3)';
-      ctx.strokeStyle = '#0066ff';
-      ctx.lineWidth = 2;
-      
-      ctx.beginPath();
-      ctx.moveTo(room.points[0].x, room.points[0].y);
-      room.points.slice(1).forEach(point => {
-        ctx.lineTo(point.x, point.y);
-      });
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      
-      if (selectedItem && selectedItem.type === 'room' && selectedItem.id === room.id) {
-        ctx.strokeStyle = '#ff0000';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-      }
-    });
-  
-    // Drawing POIs
-    pois.forEach((obj) => {
-      const iconSize = 30;
-      const icon = preloadedIcons[obj.category] || preloadedIcons["default"];
-  
-      // Ensure the image is loaded before drawing
-      if (icon.complete) {
-        ctx.drawImage(icon, obj.x - iconSize / 2, obj.y - iconSize / 2, iconSize, iconSize);
-      } else {
-        icon.onload = () => {
-          ctx.drawImage(icon, obj.x - iconSize / 2, obj.y - iconSize / 2, iconSize, iconSize);
-        };
-      }
-  
-      // Draw poi name and category
-      ctx.font = `${14 / scale}px Arial`;
-      ctx.fillStyle = "#000";
-      ctx.textAlign = "center";
-  
-      // Highlight selected poi
-      if (selectedItem && selectedItem.type === "poi" && selectedItem.id === obj.id) {
-        ctx.strokeStyle = "#ff0000";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(obj.x - iconSize / 2, obj.y - iconSize / 2, iconSize, iconSize);
-      }
-    });
-  
-    // Drawing navigation points
-    if (pathPoints.start) {
-      ctx.fillStyle = '#00ff00';
-      ctx.beginPath();
-      ctx.arc(pathPoints.start.x, pathPoints.start.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (pathPoints.end) {
-      ctx.fillStyle = '#ff0000';
-      ctx.beginPath();
-      ctx.arc(pathPoints.end.x, pathPoints.end.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  
-    // Drawing calculated path
-    if (currentPath.length > 1) {
-      ctx.strokeStyle = '#00ff00';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(currentPath[0].x, currentPath[0].y);
-      currentPath.slice(1).forEach(point => {
-        ctx.lineTo(point.x, point.y);
-      });
-      ctx.stroke();
-    }
-    
-    // Drawing current wall
-    if (isDrawing && currentWall) {
-      ctx.lineWidth = 20;
-      ctx.strokeStyle = '#333';
-      ctx.beginPath();
-      ctx.moveTo(currentWall.start.x, currentWall.start.y);
-      ctx.lineTo(currentWall.end.x, currentWall.end.y);
-      ctx.stroke();
-    }
-    
-    // Drawing current window
-    if (isDrawing && currentWindow) {
-      ctx.lineWidth = 20;
-      ctx.strokeStyle = '#4682B4';
-      ctx.beginPath();
-      ctx.moveTo(currentWindow.start.x, currentWindow.start.y);
-      ctx.lineTo(currentWindow.end.x, currentWindow.end.y);
-      ctx.stroke();
-      
-      displayMeasurements(ctx, currentWindow.start, currentWindow.end);
-    }
-    
-    // Drawing current room
-    if (tool === 'room' && currentRoom.length > 0) {
-      ctx.strokeStyle = '#0066ff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(currentRoom[0].x, currentRoom[0].y);
-      currentRoom.slice(1).forEach(point => {
-        ctx.lineTo(point.x, point.y);
-      });
-      if (isDrawing) {
-        const lastPoint = currentRoom[currentRoom.length - 1];
-        ctx.lineTo(lastPoint.x, lastPoint.y);
-      } else {
-        ctx.closePath();
-      }
-      ctx.stroke();
-    }
-    
     ctx.restore();
-  }, [walls, rooms, pois, doors, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, drawGrid, tool]);
-  
-  
+  }, [walls, rooms, pois, doors, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, tool]);
   
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -333,307 +112,53 @@ const FloorPlanV4 = () => {
         } else if (selectedItem.type === "door") {
           setDoors(doors.filter((d) => d.id !== selectedItem.id));
         }
-  
         setSelectedItem(null);
       }
     };
-  
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [tool, selectedItem, walls, doors, rooms, pois]);
  
 
- 
-
   const handleMouseDown = (e) => {
     const canvas = canvasRef.current;
-    const mousePos = getMousePos(canvas, e , offset, scale);
-    const { offsetX, offsetY } = e.nativeEvent;
-
-    // Check if the click is on an object
-    const clickedObject = pois.find(obj =>
-      offsetX >= obj.x - 15 && offsetX <= obj.x + 15 &&
-      offsetY >= obj.y - 15 && offsetY <= obj.y + 15
-    );
-
-    if (clickedObject) {
-      setDraggingId(clickedObject.id);
-      setOffset({ x: offsetX - clickedObject.x, y: offsetY - clickedObject.y });
-    }
-   
-    // Middle mouse button or pan tool for panning
-    if (e.button === 1 || (e.button === 0 && tool === 'pan')) {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
-      return;
-    }
-  
-    // Path tool logic
-    if (tool === 'path') {
-      if (!pathPoints.start) {
-        setPathPoints({ ...pathPoints, start: mousePos });
-      } else if (!pathPoints.end) {
-        setPathPoints({ ...pathPoints, end: mousePos });
-        calculatePath(pathPoints.start, mousePos);
-      } else {
-        setPathPoints({ start: mousePos, end: null });
-        setCurrentPath([]);
-      }
-      return;
-    }
-   
-    // Select tool logic
-    if (tool === 'select') {
-      const item = findItemAt(mousePos);
-      setSelectedItem(item);
-      return;
-    }
-  
-    // Door placement on selected wall
-    if (tool === 'door' && selectedItem?.type === 'wall') {
-      const wall = walls.find(w => w.id === selectedItem.id);
-      if (wall) {
-        const doorPosition = calculateDoorPosition(mousePos, wall);
-        if (doorPosition) {
-          const newDoor = {
-            id: Date.now(),
-            start: doorPosition.start,
-            end: doorPosition.end,
-            wallId: wall.id
-          };
-          setDoors([...doors, newDoor]);
-        }
-      }
-      return;
-    }
-   
-    // Start drawing mode
-    setIsDrawing(true);
-  
-    // Different drawing tools
-    if (tool === 'window') {
-      setCurrentWindow({
-        id: Date.now(),
-        start: { x: mousePos.x, y: mousePos.y },
-        end: { x: mousePos.x, y: mousePos.y }
-      });
-    } else if (tool === 'wall') {
-      setCurrentWall({
-        id: Date.now(),
-        start: { x: mousePos.x, y: mousePos.y },
-        end: { x: mousePos.x, y: mousePos.y }
-      });
-    } else if (tool === 'room') {
-      if (currentRoom.length === 0 || !isNearPoint(mousePos, currentRoom[0])) {
-        setCurrentRoom([...currentRoom, { x: mousePos.x, y: mousePos.y }]);
-      } else {
-        if (currentRoom.length >= 3) {
-          setRooms([...rooms, {
-            id: Date.now(),
-            points: [...currentRoom],
-            area: calculatePolygonArea(currentRoom)
-          }]);
-        }
-        setCurrentRoom([]);
-        setIsDrawing(false);
-      }
-    } else if (tool === "poi") {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      setPendingPoi({ x, y }); // Store position
-      setShowPoiForm(true);
-    } else if (tool === 'erase' && selectedItem) {
-      // Erase logic for different item types
-      if (selectedItem.type === 'wall') {
-        setWalls(walls.filter(w => w.id !== selectedItem.id));
-        setDoors(doors.filter(d => d.wallId !== selectedItem.id));
-      } else if (selectedItem.type === 'room') {
-        setRooms(rooms.filter(r => r.id !== selectedItem.id));
-      } else if (selectedItem.type === 'poi') {
-        setPois(pois.filter(o => o.id !== selectedItem.id));
-      } else if (selectedItem.type === 'door') {
-        setDoors(doors.filter(d => d.id !== selectedItem.id));
-      } 
-      setSelectedItem(null);
+    const mousePos = getMousePos(canvas, e, offset, scale);
+    handleObjectDrag(e, pois, setDraggingId, setOffset);
+    handlePan(e, setIsDragging, setDragStart, offset, tool);
+    switch (tool) {
+      case 'path':
+        handlePath(mousePos, pathPoints, setPathPoints, setCurrentPath, walls, doors);
+        break;
+      case 'select':
+        handleSelect(mousePos, setSelectedItem, doors, pois, walls, rooms);
+        break;
+      case 'door':
+        handleDoor(mousePos, selectedItem, walls, calculateDoorPosition, doors, setDoors);
+        break;
+      case 'erase':
+        handleErase(selectedItem, setWalls, setDoors, setRooms, setPois, walls, doors, rooms, pois, setSelectedItem);
+        break;
+      case 'poi':
+        handlePOI(e, canvasRef, setPendingPoi, setShowPoiForm);
+        break;
+        case 'room':
+          handleRoomDrawing(mousePos,currentRoom,setCurrentRoom,setRooms,calculatePolygonArea,setIsDrawing,isNearPoint );
+          break;
+      default:
+        handleDrawingStart(tool, mousePos, setCurrentWall, setCurrentWindow, setCurrentRoom, currentRoom, isNearPoint);
+        setIsDrawing(true);  
     }
   };
 
- 
-
-const calculatePath = (start, end) => {
-    if (!start || !end) {
-        console.warn("Les points de départ ou d'arrivée sont invalides :", start, end);
-        return;
-    }
-
-    // Définir la taille des cellules de la grille (à ajuster selon vos besoins)
-    const cellSize = 10; // Par exemple, 20 pixels par cellule
-    
-    // Récupérer les dimensions de votre espace
-    const width = 1500; // À remplacer par la largeur de votre plan
-    const height = 1500; // À remplacer par la hauteur de votre plan
-    
-    // Créer la grille
-    const grid = createGrid(width, height, cellSize,walls,doors);
-    console.log("Grid created with dimensions:", grid.length, "rows ×", grid[0].length, "columns");
-    
-    // Trouver le chemin entre les points de départ et d'arrivée
-    const path = findPath(start.x, start.y, end.x, end.y, grid, cellSize);
-    console.log("Path found:", path);
-    
-    if (path && path.length > 0) {
-        // Lisser le chemin si nécessaire
-        // const smoothPath = smoothPathPoints(path,grid,cellSize);
-        // console.log("Smoothed path: ----------->>>>>>>", smoothPath);
-        setCurrentPath(path);
-    } else {
-        console.warn("Aucun chemin trouvé entre les points :", start, end);
-        setCurrentPath([]);
-    }
-};
-
-
-// Fonction de recherche de chemin adaptée à la grille
-const findPath = (startX, startY, endX, endY, grid, cellSize) => {
-console.log("Calcul du chemin de (x,y)={", startX,",",startY, "} à (x,y)= {", endX,",",endY, "}");
-console.log("Taille de cellule:", cellSize);
-    // Convertir coordonnées réelles en indices de cellule
-    const startCol = Math.floor(startX / cellSize);
-    const startRow = Math.floor(startY / cellSize);
-    const endCol = Math.floor(endX / cellSize);
-    const endRow = Math.floor(endY / cellSize);
-    
-    // Vérifier si les points de départ et d'arrivée sont dans des zones traversables
-    if (startRow < 0 || startCol < 0 || startRow >= grid.length || startCol >= grid[0].length ||
-        endRow < 0 || endCol < 0 || endRow >= grid.length || endCol >= grid[0].length ||
-        !grid[startRow][startCol].walkable || !grid[endRow][endCol].walkable) {
-        console.warn("Points de départ ou d'arrivée dans une zone non traversable");
-        return [];
-    }
-    
-    // Initialiser les structures pour A*
-    const openSet = [{row: startRow, col: startCol, f: 0, g: 0, h: 0}];
-    const closedSet = [];
-    const cameFrom = {};
-    
-    while (openSet.length > 0) {
-        // Trouver le nœud avec le score F le plus bas
-        let currentIndex = 0;
-        for (let i = 0; i < openSet.length; i++) {
-            if (openSet[i].f < openSet[currentIndex].f) {
-                currentIndex = i;
-            }
-        }
-        
-        const current = openSet[currentIndex];
-        
-        // Si on a atteint la destination
-        if (current.row === endRow && current.col === endCol) {
-            const path = [];
-            let curr = current;
-            
-            // Reconstruire le chemin
-            while (cameFrom[`${curr.row},${curr.col}`]) {
-                // Ajouter le point actuel au chemin
-                path.push({
-                    x: curr.col * cellSize + cellSize/2,
-                    y: curr.row * cellSize + cellSize/2
-                });
-                // Passer au point précédent
-                curr = cameFrom[`${curr.row},${curr.col}`];
-            }
-            
-            // Ajouter le point de départ
-            path.push({
-                x: startCol * cellSize + cellSize/2,
-                y: startRow * cellSize + cellSize/2
-            });
-            
-            return path.reverse();
-        }
-        
-        // Retirer le nœud courant de openSet et l'ajouter à closedSet
-        openSet.splice(currentIndex, 1);
-        closedSet.push(current);
-        
-        // Vérifier les voisins (4 directions - Nord, Sud, Est, Ouest)
-        const directions = [
-            {row: -1, col: 0},  // Nord
-            {row: 1, col: 0},   // Sud
-            {row: 0, col: -1},  // Ouest
-            {row: 0, col: 1},   // Est
-            // Décommentez pour permettre les mouvements en diagonale
-            {row: -1, col: -1}, // Nord-Ouest
-            {row: -1, col: 1},  // Nord-Est
-            {row: 1, col: -1},  // Sud-Ouest
-            {row: 1, col: 1}    // Sud-Est
-        ];
-        
-        for (const dir of directions) {
-            const neighborRow = current.row + dir.row;
-            const neighborCol = current.col + dir.col;
-            const key = `${neighborRow},${neighborCol}`;
-            
-            // Vérifier si la cellule voisine est valide
-            if (
-                neighborRow < 0 || 
-                neighborCol < 0 || 
-                neighborRow >= grid.length || 
-                neighborCol >= grid[0].length ||
-                !grid[neighborRow][neighborCol].walkable ||
-                closedSet.some(n => n.row === neighborRow && n.col === neighborCol)
-            ) {
-                continue;
-            }
-            
-            // Calculer le nouveau score G
-            const gScore = current.g + 1;
-            
-            // Vérifier si le voisin est déjà dans openSet
-            const openNeighbor = openSet.find(n => n.row === neighborRow && n.col === neighborCol);
-            
-            if (!openNeighbor || gScore < openNeighbor.g) {
-                // Calculer les scores
-                const h = Math.abs(neighborRow - endRow) + Math.abs(neighborCol - endCol);
-                const f = gScore + h;
-                
-                if (!openNeighbor) {
-                    openSet.push({row: neighborRow, col: neighborCol, f, g: gScore, h});
-                } else {
-                    openNeighbor.f = f;
-                    openNeighbor.g = gScore;
-                    openNeighbor.h = h;
-                }
-                
-                cameFrom[key] = current;
-            }
-        }
-    }
-    
-    // Aucun chemin trouvé
-    return [];
-};
-
   const handleMouseMove = (e) => {
     const canvas = canvasRef.current;
-    const mousePos = getMousePos(canvas, e,offset,scale);
+    const mousePos = getMousePos(canvas, e, offset, scale);
+
     if (draggingId !== null) {
       const { offsetX, offsetY } = e.nativeEvent;
-  
-      setPois(prevObjects =>
-        prevObjects.map(obj =>
-          obj.id === draggingId
-            ? { ...obj, x: offsetX - offset.x, y: offsetY - offset.y }
-            : obj
-        )
-      );
+      setPois(prevObjects => movePOI(prevObjects, draggingId, offsetX, offsetY, offset));
     }
-    
+
     if (isDragging) {
       setOffset({
         x: e.clientX - dragStart.x,
@@ -641,184 +166,76 @@ console.log("Taille de cellule:", cellSize);
       });
       return;
     }
-    
-    if (!isDrawing) return;
-    
-    if (tool === 'wall' && currentWall) {
-      setCurrentWall({
-        ...currentWall,
-        end: { x: mousePos.x, y: mousePos.y }
-      });
 
-    
+    if (!isDrawing) return;
+
+    if (tool === 'wall' && currentWall) {
+      setCurrentWall({ ...currentWall, end: { x: mousePos.x, y: mousePos.y } });
+
       const ctx = canvas.getContext('2d');
-      // Redessiner pour effacer l'ancien texte (vous pouvez appeler votre fonction de rendu ici)
-      // ...
-      
-      // Afficher la dimension du mur en cours de dessin
       displayMeasurements(ctx, currentWall.start, { x: mousePos.x, y: mousePos.y });
     }
 
     if (tool === 'window' && currentWindow) {
-        setCurrentWindow({
-          ...currentWindow,
-          end: { x: mousePos.x, y: mousePos.y }
-        });
-         // Si vous souhaitez afficher les dimensions comme pour les murs
-  const ctx = canvas.getContext('2d');
-  displayMeasurements(ctx, currentWindow.start, { x: mousePos.x, y: mousePos.y });
+      setCurrentWindow({ ...currentWindow, end: { x: mousePos.x, y: mousePos.y } });
+
+      const ctx = canvas.getContext('2d');
+      displayMeasurements(ctx, currentWindow.start, { x: mousePos.x, y: mousePos.y });
     }
   };
 
-  const handleMouseUp = () => {
-    setDraggingId(null);
+  const snapToGrid = (point, gridSize = 10) => {
+    return {
+      x: Math.round(point.x / gridSize) * gridSize,
+      y: Math.round(point.y / gridSize) * gridSize
+    };
+  };
+  
+  const handleMouseUp = (e) => {
+    const mousePos = getMousePos(canvasRef.current, e, offset, scale);
+    handleDrawingEnd(tool,mousePos,currentWall, setWalls,currentWindow, setWindows,currentRoom, setRooms,calculatePolygonArea,setCurrentRoom, setIsDrawing,isNearPoint );
+    setIsDrawing(false); // Stop drawing mode
+    setDraggingId(stopDraggingPOI());
     if (isDragging) {
       setIsDragging(false);
       return;
     }
-    
     if (!isDrawing) return;
-    
     if (tool === 'wall' && currentWall) {
       const dx = currentWall.end.x - currentWall.start.x;
       const dy = currentWall.end.y - currentWall.start.y;
       const length = Math.sqrt(dx * dx + dy * dy);
-      
+
       if (length > 10) {
         setWalls([...walls, { ...currentWall }]);
       }
-      
+
       setCurrentWall(null);
-    }else if (tool === 'window' && currentWindow) {
-        const dx = currentWindow.end.x - currentWindow.start.x;
-        const dy = currentWindow.end.y - currentWindow.start.y;
-        const length = Math.sqrt(dx * dx + dy * dy);
-        
-        if (length > 10) { // Vérifier que la fenêtre a une taille minimale
-          setWindows([...windows, { 
-            ...currentWindow,
-            // Vous pouvez ajouter d'autres propriétés ici
-            type: 'window' 
-          }]);
-        }
-        
-        setCurrentWindow(null);
+    } else if (tool === 'window' && currentWindow) {
+      const dx = currentWindow.end.x - currentWindow.start.x;
+      const dy = currentWindow.end.y - currentWindow.start.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+
+      if (length > 10) {
+        setWindows([...windows, { ...currentWindow, type: 'window' }]);
       }
-    
+
+      setCurrentWindow(null);
+    }
+
     setIsDrawing(false);
   };
 
   const handleWheel = (e) => {
-    e.preventDefault();
-    const delta = e.deltaY < 0 ? 1.1 : 0.9;
-    const canvas = canvasRef.current;
-    const mousePos = getMousePos(canvas, e ,offset,scale);
-    
-    const newScale = scale * delta;
-    if (newScale >= 0.1 && newScale <= 10) {
-      const newOffset = {
-        x: offset.x - (mousePos.x * scale - mousePos.x * newScale),
-        y: offset.y - (mousePos.y * scale - mousePos.y * newScale)
-      };
-      
-      setScale(newScale);
-      setOffset(newOffset);
-    }
+    const { newScale, newOffset } = zoomPOI(scale, offset, e, getMousePos, canvasRef.current);
+    setScale(newScale);
+    setOffset(newOffset);
   };
-
-  const findItemAt = (pos) => {
-    for (const door of doors) {
-      if (isNearLine(pos, door.start, door.end)) {
-        return { type: 'door', id: door.id };
-      }
-    }
-
-    for (const obj of pois) {
-      if (
-        pos.x >= obj.x && pos.x <= obj.x + obj.width &&
-        pos.y >= obj.y && pos.y <= obj.y + obj.height
-      ) {
-        return { type: 'poi', id: obj.id };
-      }
-    }
-    
-    for (const wall of walls) {
-      if (isNearLine(pos, wall.start, wall.end)) {
-        return { type: 'wall', id: wall.id };
-      }
-    }
-    
-    for (const room of rooms) {
-      if (isInsidePolygon(pos, room.points)) {
-        return { type: 'room', id: room.id };
-      }
-    }
-    
-    return null;
-  };
-
-  const isNearLine = (point, lineStart, lineEnd) => {
-    const distance = distanceToLine(point, lineStart, lineEnd);
-    return distance < 15;
-  };
-
-  const distanceToLine = (point, lineStart, lineEnd) => {
-    const A = point.x - lineStart.x;
-    const B = point.y - lineStart.y;
-    const C = lineEnd.x - lineStart.x;
-    const D = lineEnd.y - lineStart.y;
-    
-    const dot = A * C + B * D;
-    const lenSq = C * C + D * D;
-    let param = -1;
-    
-    if (lenSq !== 0) param = dot / lenSq;
-    
-    let xx, yy;
-    
-    if (param < 0) {
-      xx = lineStart.x;
-      yy = lineStart.y;
-    } else if (param > 1) {
-      xx = lineEnd.x;
-      yy = lineEnd.y;
-    } else {
-      xx = lineStart.x + param * C;
-      yy = lineStart.y + param * D;
-    }
-    
-    const dx = point.x - xx;
-    const dy = point.y - yy;
-    
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-
-  const calculatePolygonArea = (points) => {
-    let area = 0;
-    for (let i = 0; i < points.length; i++) {
-      const j = (i + 1) % points.length;
-      area += points[i].x * points[j].y;
-      area -= points[j].x * points[i].y;
-    }
-    return Math.abs(area / 2);
-  };
-
-
- 
 
   const handleGeoJSONUploadModel = async (event) => {
     const file = event.target.files[0];
     if (file) {
-      const success = await GeoJsonManipulation.loadFloorPlanFromFileModel(file,setWalls, 
-        setRooms, 
-        setDoors, 
-        setWindows, 
-        setJsonData,
-        setImageInfo,
-        setScale,
-        setOffset,
-        canvasSize);
+      const success = await GeoJsonManipulation.loadFloorPlanFromFileModel(file,setWalls,setRooms,setDoors,setWindows,setJsonData,setImageInfo,setScale,setOffset,canvasSize);
       if (success) {
         console.log("Plan d'étage chargé avec succès");
         // Réinitialiser le chemin actuel et les points de navigation
@@ -830,21 +247,11 @@ console.log("Taille de cellule:", cellSize);
       }
     }
   };
-
-
 
    const handleGeoJSONUploadSystem = async (event) => {
     const file = event.target.files[0];
     if (file) {
-      const success = await GeoJsonManipulation.loadFloorPlanFromFileSysteme(file,setWalls, 
-        setPois, 
-        setDoors, 
-        setWindows, 
-        setJsonData,
-        setImageInfo,
-        setScale,
-        setOffset,
-        canvasSize);
+      const success = await GeoJsonManipulation.loadFloorPlanFromFileSysteme(file,setWalls, setPois,setDoors,setWindows,setJsonData,setImageInfo,setScale,setOffset,canvasSize);
       if (success) {
         console.log("Plan d'étage chargé avec succès");
         // Réinitialiser le chemin actuel et les points de navigation
@@ -856,7 +263,6 @@ console.log("Taille de cellule:", cellSize);
       }
     }
   };
-
 
   const handleNameChange = (e) => {
     setNewPoiName(e.target.value);
@@ -878,28 +284,25 @@ console.log("Taille de cellule:", cellSize);
 
   const handleCanvasClick = (e) => {
     const { offsetX, offsetY } = e.nativeEvent;
-
-    const clickedPOI = pois.find(obj =>
-      offsetX >= obj.x - 15 && offsetX <= obj.x + 15 &&
-      offsetY >= obj.y - 15 && offsetY <= obj.y + 15
-    );
-      console.log("====click")
+  
+    const clickedPOI = findClickedPOI(pois, offsetX, offsetY);
+      
     if (clickedPOI) {
+      console.log("====click");
       setSelectedPOI(clickedPOI);
       setNewPoiName(clickedPOI.name); // Pré-remplit avec l'ancien nom
     }
+  
     if (tool === "poi") {
       const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      setPendingPoi({ x, y }); // Store position
+      const position = getCanvasClickPosition(canvas, e);
+      if (!position) return;
+  
+      setPendingPoi(position); // Store position
       setShowPoiForm(true);
     }
   };
+
 
   return (
     <div className="flex flex-col h-screen">
@@ -1137,6 +540,3 @@ console.log("Taille de cellule:", cellSize);
 };
 
 export default FloorPlanV4;
-
-
-// calculate path //
