@@ -1,55 +1,3 @@
-// const exportToGeoJSON = (walls, rooms, doors, windows, imageInfo) => {
-//     const geoJSONData = {
-//         "type": "FeatureCollection",
-//         "features": []
-//       };
-    
-//       // Exporter chaque mur comme une feature LineString
-//       walls.forEach((wall, index) => {
-//         const wallFeature = {
-//           "type": "Feature",
-//           "id": index + 1, // ID unique pour chaque mur
-//           "geometry": {
-//             "type": "LineString",
-//             "coordinates": [
-//               [wall.start.x, wall.start.y],
-//               [wall.end.x, wall.end.y]
-//             ]
-//           },
-//           "properties": {
-//             "class_name": "wall",
-//             "width": wall.width || 1, // Largeur par défaut si non spécifiée
-//             "length": Math.sqrt(
-//               Math.pow(wall.end.x - wall.start.x, 2) + 
-//               Math.pow(wall.end.y - wall.start.y, 2)
-//             ),
-//             "orientation": Math.atan2(
-//               wall.end.y - wall.start.y, 
-//               wall.end.x - wall.start.x
-//             ) * (180 / Math.PI), // Angle en degrés
-//             "original_id": wall.id // Conserver l'ID original si existant
-//           }
-//         };
-    
-//         geoJSONData.features.push(wallFeature);
-//       });
-    
-//       // Créer et télécharger le fichier GeoJSON
-//       const jsonStr = JSON.stringify(geoJSONData, null, 2);
-//       const blob = new Blob([jsonStr], { type: 'application/geo+json' });
-//       const url = URL.createObjectURL(blob);
-      
-//       const a = document.createElement('a');
-//       a.href = url;
-//       a.download = 'walls.geojson';
-//       document.body.appendChild(a);
-//       a.click();
-//       document.body.removeChild(a);
-//       URL.revokeObjectURL(url);
-      
-//       console.log("Walls exported to GeoJSON successfully");
-//       return true;
-//   };
 
 const exportToGeoJSON = (walls, pois, doors, windows, imageInfo) => {
     const geoJSONData = {
@@ -123,94 +71,7 @@ const exportToGeoJSON = (walls, pois, doors, windows, imageInfo) => {
     console.log("Floor plan with POIs exported successfully");
     return true;
   };
-
-
-//   const initializeFloorFromGeoJSONSystem= (geoJSONData) => {
-//     // Vérifier la validité du GeoJSON
-//     if (!geoJSONData || !geoJSONData.features) {
-//       console.error('Format GeoJSON invalide');
-//       return null;
-//     }
-  
-//     // Tableaux pour stocker les éléments
-//     const newWalls = [];
-//     const newPOIs = [];
-  
-//     // Parcourir toutes les features
-//     geoJSONData.features.forEach(feature => {
-//       // Filtrer uniquement les murs (class_name: "wall")
-//       if (feature.properties.class_name === "wall" && 
-//           feature.geometry.type === "LineString") {
-        
-//         // Extraire les coordonnées du début et de la fin
-//         const [start, end] = feature.geometry.coordinates;
-        
-//         // Créer l'objet mur
-//         const wall = {
-//           // Utiliser l'ID original si disponible, sinon générer un nouvel ID
-//           id: feature.properties.original_id || `wall-${Date.now()}-${Math.random().toString(36).substr(2,9)}`,
-          
-//           // Coordonnées de début et de fin
-//           start: { 
-//             x: start[0], 
-//             y: start[1] 
-//           },
-//           end: { 
-//             x: end[0], 
-//             y: end[1] 
-//           },
-          
-//           // Largeur du mur (utiliser la propriété width ou une valeur par défaut)
-//           width: feature.properties.width || 1,
-          
-//           // Calculer la longueur si non présente
-//           length: feature.properties.length || Math.sqrt(
-//             Math.pow(end[0] - start[0], 2) + 
-//             Math.pow(end[1] - start[1], 2)
-//           ),
-          
-//           // Angle d'orientation (si disponible)
-//           orientation: feature.properties.orientation,
-          
-//           // Conserver toutes les propriétés originales
-//           properties: feature.properties
-//         };
-  
-//         // Ajouter le mur à la liste
-//         newWalls.push(wall);
-//       }  else if (feature.properties.class_name === "poi" && 
-//         feature.geometry.type === "Point") {
- 
-//  const [x, y] = feature.geometry.coordinates;
- 
-//  const poi = {
-//    id: feature.properties.original_id || `poi-${Date.now()}-${Math.random().toString(36).substr(2,9)}`,
-//    x: x,
-//    y: y,
-//    name: feature.properties.name || `POI ${newPOIs.length + 1}`,
-//    type: feature.properties.type || "default",
-//    description: feature.properties.description || "",
-//    icon: feature.properties.icon || null,
-//    properties: feature.properties
-//  };
-
-//  newPOIs.push(poi);
-// }
-//     });
-  
-//     // Fonction optionnelle pour filtrer les doublons
-//     const uniqueWalls = filterDuplicateWalls(newWalls);
-  
-//     // Retourner les murs
-//     return {
-//       walls: uniqueWalls,
-//       newPOIs
-//     };
-//   };
-
-
 const initializeFloorFromGeoJSONSystem = (geoJSONData) => {
-    // Validation initiale du GeoJSON
     if (!geoJSONData || !geoJSONData.features || !Array.isArray(geoJSONData.features)) {
       console.error('Format GeoJSON invalide');
       return { walls: [], pois: [] };
@@ -226,11 +87,10 @@ const initializeFloorFromGeoJSONSystem = (geoJSONData) => {
           console.warn('Feature invalide : propriétés ou géométrie manquantes', feature);
           return;
         }
-  
         // Traitement des murs
         if (feature.properties.class_name === "wall" && feature.geometry.type === "LineString") {
           const coords = feature.geometry.coordinates;
-          
+      
           // Validation des coordonnées
           if (!coords || coords.length < 2 || 
               !Array.isArray(coords[0]) || !Array.isArray(coords[1]) ||
@@ -284,19 +144,13 @@ const initializeFloorFromGeoJSONSystem = (geoJSONData) => {
         console.error('Erreur lors du traitement d\'une feature:', error, feature);
       }
     });
-  
     // Fonction optionnelle de filtrage des doublons (à implémenter)
     const uniqueWalls = filterDuplicateWalls ? filterDuplicateWalls(newWalls) : newWalls;
-  
     return {
       walls: uniqueWalls,
       pois: newPOIs
     };
   };
-
-
-  
-  
   // Fonction utilitaire pour filtrer les murs dupliqués
   const filterDuplicateWalls = (walls, tolerance = 0.01) => {
     const uniqueWalls = [];
@@ -320,8 +174,6 @@ const initializeFloorFromGeoJSONSystem = (geoJSONData) => {
   
     return uniqueWalls;
   };
-
-
   // Fonction pour charger le GeoJSON à partir d'un fichier
 const loadFloorPlanFromFileSysteme = async (file ,setWalls, 
     setPois, 
@@ -337,12 +189,10 @@ const loadFloorPlanFromFileSysteme = async (file ,setWalls,
       const jsonText = await file.text();
       const geoJSONData = JSON.parse(jsonText);
       const { walls, pois, doors, imageInfo } = initializeFloorFromGeoJSONSystem(geoJSONData);
-      
       // Mettre à jour l'état de votre application avec le plan d'étage
       setWalls(walls);
       setPois(pois);
       setDoors([]);
-      
       // Optionnel: Mettre à jour la taille du canvas si nécessaire
       if (imageInfo) {
         // Vous pouvez décider comment vous souhaitez gérer la taille de l'image
@@ -352,28 +202,20 @@ const loadFloorPlanFromFileSysteme = async (file ,setWalls,
           canvasSize.height / imageInfo.height
         );
         setScale(ratio);
-        
         // Centrer l'image
         setOffset({
           x: (canvasSize.width - imageInfo.width * ratio) / 2,
           y: (canvasSize.height - imageInfo.height * ratio) / 2
         });
       }
-      
       // Mettre à jour le JSON affiché si vous le souhaitez
       setJsonData(jsonText);
-      
       return true;
     } catch (error) {
       console.error("Erreur lors du chargement du fichier GeoJSON:", error);
       return false;
     }
   };
-  
-  
-  
-
-
   const initializeFloorPlanFromGeoJSONModel = (geoJSONData) => {
     const newWalls = [];
     const newRooms = [];
@@ -548,7 +390,6 @@ const loadFloorPlanFromFileSysteme = async (file ,setWalls,
   
     return { walls: uniqueWalls, rooms: newRooms, doors: newDoors, windows: newWindows, imageInfo };
   };
-
 // Fonction pour charger le GeoJSON à partir d'un fichier
 const loadFloorPlanFromFileModel = async (file ,setWalls, 
     setRooms, 
@@ -569,7 +410,6 @@ const loadFloorPlanFromFileModel = async (file ,setWalls,
       setWalls(walls);
        setRooms(rooms);
       setDoors([]);
-      
       // Optionnel: Mettre à jour la taille du canvas si nécessaire
       if (imageInfo) {
         // Vous pouvez décider comment vous souhaitez gérer la taille de l'image
@@ -579,27 +419,18 @@ const loadFloorPlanFromFileModel = async (file ,setWalls,
           canvasSize.height / imageInfo.height
         );
         setScale(ratio);
-        
         // Centrer l'image
         setOffset({
           x: (canvasSize.width - imageInfo.width * ratio) / 2,
           y: (canvasSize.height - imageInfo.height * ratio) / 2
         });
       }
-      
       // Mettre à jour le JSON affiché si vous le souhaitez
       setJsonData(jsonText);
-      
       return true;
     } catch (error) {
       console.error("Erreur lors du chargement du fichier GeoJSON:", error);
       return false;
     }
   };
-  
-
-
-
   export default  {exportToGeoJSON ,loadFloorPlanFromFileModel ,loadFloorPlanFromFileSysteme  };
-  
-
