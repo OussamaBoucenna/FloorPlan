@@ -123,7 +123,7 @@ const FloorPlanV4 = () => {
   const handleMouseDown = (e) => {
     const canvas = canvasRef.current;
     const mousePos = getMousePos(canvas, e, offset, scale);
-    handleObjectDrag(e, pois, setDraggingId, setOffset);
+    handleObjectDrag(e, pois, setDraggingId, setOffset, offset, scale);
     handlePan(e, setIsDragging, setDragStart, offset, tool);
     switch (tool) {
       case 'path':
@@ -139,7 +139,7 @@ const FloorPlanV4 = () => {
         handleErase(selectedItem, setWalls, setDoors, setRooms, setPois, walls, doors, rooms, pois, setSelectedItem);
         break;
       case 'poi':
-        handlePOI(e, canvasRef, setPendingPoi, setShowPoiForm);
+        handlePOI(e, canvasRef, setPendingPoi, setShowPoiForm, offset, scale);
         break;
         case 'room':
           handleRoomDrawing(mousePos,currentRoom,setCurrentRoom,setRooms,calculatePolygonArea,setIsDrawing,isNearPoint );
@@ -156,7 +156,7 @@ const FloorPlanV4 = () => {
 
     if (draggingId !== null) {
       const { offsetX, offsetY } = e.nativeEvent;
-      setPois(prevObjects => movePOI(prevObjects, draggingId, offsetX, offsetY, offset));
+      setPois(prevObjects => movePOI(prevObjects, draggingId, offsetX, offsetY, offset, scale));
     }
 
     if (isDragging) {
@@ -182,13 +182,6 @@ const FloorPlanV4 = () => {
       const ctx = canvas.getContext('2d');
       displayMeasurements(ctx, currentWindow.start, { x: mousePos.x, y: mousePos.y });
     }
-  };
-
-  const snapToGrid = (point, gridSize = 10) => {
-    return {
-      x: Math.round(point.x / gridSize) * gridSize,
-      y: Math.round(point.y / gridSize) * gridSize
-    };
   };
   
   const handleMouseUp = (e) => {
@@ -284,23 +277,69 @@ const FloorPlanV4 = () => {
 
   const handleCanvasClick = (e) => {
     const { offsetX, offsetY } = e.nativeEvent;
-  
-    const clickedPOI = findClickedPOI(pois, offsetX, offsetY);
-      
+
+    const clickedPOI = findClickedPOI(pois, offsetX, offsetY, offset, scale);
     if (clickedPOI) {
-      console.log("====click");
       setSelectedPOI(clickedPOI);
-      setNewPoiName(clickedPOI.name); // Pré-remplit avec l'ancien nom
+      setNewPoiName(clickedPOI.name); 
     }
-  
+
     if (tool === "poi") {
-      const canvas = canvasRef.current;
-      const position = getCanvasClickPosition(canvas, e);
-      if (!position) return;
-  
-      setPendingPoi(position); // Store position
-      setShowPoiForm(true);
+      handlePOI(e, canvasRef, setPendingPoi, setShowPoiForm, offset, scale);
     }
+  };
+
+  const [selectedWall, setSelectedWall] = useState(null); // Stores the selected wall
+  const [isResizing, setIsResizing] = useState(false); // Tracks if resizing is active
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 }); // Stores mouse offset for dragging
+
+  const startDraggingWall = (x, y) => {
+    if (selectedWall) {
+        setDragOffset({ x: x - selectedWall.x, y: y - selectedWall.y });
+        setIsDragging(true);
+    }
+  };
+
+  const selectWall = (x, y) => {
+    const clickedWall = walls.find(wall => 
+        x >= wall.x && x <= wall.x + wall.width &&
+        y >= wall.y && y <= wall.y + wall.height
+    );
+    setSelectedWall(clickedWall || null);
+  };
+  
+  const startResizingWall = (x, y) => {
+    if (selectedWall) {
+        const nearRightEdge = x >= selectedWall.x + selectedWall.width - 10;
+        if (nearRightEdge) {
+            setIsResizing(true);
+        }
+    }
+  };
+
+  const updateWallPosition = (x, y) => {
+    if (isDragging && selectedWall) {
+        setWalls(prevWalls => prevWalls.map(wall => 
+            wall === selectedWall 
+                ? { ...wall, x: x - dragOffset.x, y: y - dragOffset.y }
+                : wall
+        ));
+    }
+  };
+
+  const updateWallSize = (x) => {
+    if (isResizing && selectedWall) {
+        setWalls(prevWalls => prevWalls.map(wall => 
+            wall === selectedWall 
+                ? { ...wall, width: Math.max(10, x - wall.x) }
+                : wall
+        ));
+    }
+  };
+  const deselectWall = () => {
+    setSelectedWall(null);
+    setIsDragging(false);
+    setIsResizing(false);
   };
 
 

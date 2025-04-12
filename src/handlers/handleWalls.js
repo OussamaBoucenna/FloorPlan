@@ -45,3 +45,5 @@ export const drawWalls = (ctx, walls, selectedItem, displayMeasurements) => {
 };
 
 
+
+

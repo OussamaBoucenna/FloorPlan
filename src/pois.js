@@ -27,12 +27,16 @@ export const updatePOIPosition = (pois, draggingId, offsetX, offsetY, offset) =>
     return pois.filter(obj => obj.id !== selectedPOI.id);
   };
 
-  export const movePOI = (pois, draggingId, offsetX, offsetY, offset) => {
+  export const movePOI = (pois, draggingId, offsetX, offsetY, offset, scale) => {
     if (!pois || draggingId === null) return pois;
   
     return pois.map(obj =>
       obj.id === draggingId
-        ? { ...obj, x: offsetX - offset.x, y: offsetY - offset.y }
+        ? { 
+            ...obj, 
+            x: (offsetX - offset.x) / scale, 
+            y: (offsetY - offset.y) / scale 
+          }
         : obj
     );
   };
@@ -69,10 +73,13 @@ export const updatePOIPosition = (pois, draggingId, offsetX, offsetY, offset) =>
     return { newScale: scale, newOffset: offset };
   };
   
-  export const findClickedPOI = (pois, offsetX, offsetY) => {
+  export const findClickedPOI = (pois, offsetX, offsetY, offset, scale) => {
+    const adjustedX = (offsetX - offset.x) / scale;
+    const adjustedY = (offsetY - offset.y) / scale;
+    
     return pois.find(obj =>
-      offsetX >= obj.x - 15 && offsetX <= obj.x + 15 &&
-      offsetY >= obj.y - 15 && offsetY <= obj.y + 15
+      adjustedX >= obj.x - 15 && adjustedX <= obj.x + 15 &&
+      adjustedY >= obj.y - 15 && adjustedY <= obj.y + 15
     );
   };
   
@@ -104,23 +111,22 @@ export const updatePOIPosition = (pois, draggingId, offsetX, offsetY, offset) =>
       setTool("poi");
       setShowPoiForm(false);
     };
-  
-    // Function to create a POI
+     // In the handPoi function, modify handleCreatePoi
     const handleCreatePoi = () => {
       if (!poiName || !poiCategory) {
         alert("Veuillez remplir tous les champs.");
         return;
       }
-  
+
       if (!pendingPoi) {
         alert("Aucune position sélectionnée pour le POI.");
         return;
       }
-  
+
       const newObj = {
         id: Date.now(),
-        x: pendingPoi.x,
-        y: pendingPoi.y,
+        x: pendingPoi.x, // This should already be correctly adjusted if handlePOI was updated
+        y: pendingPoi.y, // This should already be correctly adjusted if handlePOI was updated
         width: 50,
         height: 50,
         type: "rectangle",
@@ -129,12 +135,12 @@ export const updatePOIPosition = (pois, draggingId, offsetX, offsetY, offset) =>
         category: poiCategory,
         icon: categoryIcons[poiCategory] || categoryIcons.default,
       };
-  
+
       setPois(prevPois => [...(prevPois || []), newObj]);
       setShowPoiForm(false);
       setPendingPoi(null);
-      setPoiName(""); // Réinitialisation du champ
-      setPoiCategory(""); // Réinitialisation du champ
+      setPoiName("");
+      setPoiCategory("");
     };
   
     return {
@@ -185,29 +191,31 @@ export const updatePOIPosition = (pois, draggingId, offsetX, offsetY, offset) =>
         setShowPoiForm(true);
     };
 
-    export const handlePOI = (e, canvasRef, setPendingPoi, setShowPoiForm) => {
+    export const handlePOI = (e, canvasRef, setPendingPoi, setShowPoiForm, offset = { x: 0, y: 0 }, scale = 1) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
     
       const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const x = (e.clientX - rect.left - offset.x) / scale;
+      const y = (e.clientY - rect.top - offset.y) / scale;
     
       setPendingPoi({ x, y });
       setShowPoiForm(true);
     };
     
-    export const handleObjectDrag = (e, pois, setDraggingId, setOffset) => {
+    export const handleObjectDrag = (e, pois, setDraggingId, setOffset, offset, scale) => {
       const { offsetX, offsetY } = e.nativeEvent;
+      
+      const adjustedX = (offsetX - offset.x) / scale;
+      const adjustedY = (offsetY - offset.y) / scale;
     
       const clickedObject = pois.find(obj =>
-        offsetX >= obj.x - 15 && offsetX <= obj.x + 15 &&
-        offsetY >= obj.y - 15 && offsetY <= obj.y + 15
+        adjustedX >= obj.x - 15 && adjustedX <= obj.x + 15 &&
+        adjustedY >= obj.y - 15 && adjustedY <= obj.y + 15
       );
     
       if (clickedObject) {
         setDraggingId(clickedObject.id);
-        setOffset({ x: offsetX - clickedObject.x, y: offsetY - clickedObject.y });
       }
     };
     
