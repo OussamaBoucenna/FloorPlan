@@ -22,7 +22,8 @@ const FloorPlanV4 = () => {
   // États pour les zones
   const [zones, setZones] = useState([]);
   const [currentZone, setCurrentZone] = useState(null);
-  const [zoneType, setZoneType] = useState("rectangle"); // rectangle, circle, polygon
+  const [zoneShapeType, setZoneShapeType] = useState("rectangle"); // rectangle, circle, polygon
+  const [zoneType, setZoneType] = useState("circulation"); //zone de circulation,zone de travail,zone de danger,zone de service..
   const [currentPolygonPoints, setCurrentPolygonPoints] = useState([]);
   const [showZoneForm, setShowZoneForm] = useState(false);
   const [newZoneName, setNewZoneName] = useState("");
@@ -301,7 +302,7 @@ const FloorPlanV4 = () => {
       ctx.strokeStyle = "#FF8800";
       ctx.lineWidth = 2;
 
-      if (zone.type === "rectangle") {
+      if (zone.shapeType === "rectangle") {
         ctx.beginPath();
         ctx.rect(zone.x, zone.y, zone.width, zone.height);
         ctx.fill();
@@ -316,7 +317,7 @@ const FloorPlanV4 = () => {
           zone.x + zone.width / 2,
           zone.y + zone.height / 2
         );
-      } else if (zone.type === "circle") {
+      } else if (zone.shapeType === "circle") {
         ctx.beginPath();
         ctx.arc(zone.center.x, zone.center.y, zone.radius, 0, Math.PI * 2);
         ctx.fill();
@@ -327,7 +328,7 @@ const FloorPlanV4 = () => {
         ctx.fillStyle = "#000";
         ctx.textAlign = "center";
         ctx.fillText(zone.name, zone.center.x, zone.center.y);
-      } else if (zone.type === "polygon") {
+      } else if (zone.shapeType === "polygon") {
         ctx.beginPath();
         ctx.moveTo(zone.points[0].x, zone.points[0].y);
         zone.points.slice(1).forEach((point) => {
@@ -362,13 +363,13 @@ const FloorPlanV4 = () => {
       ) {
         ctx.strokeStyle = "#ff0000";
         ctx.lineWidth = 3;
-        if (zone.type === "rectangle") {
+        if (zone.shapeType === "rectangle") {
           ctx.strokeRect(zone.x, zone.y, zone.width, zone.height);
-        } else if (zone.type === "circle") {
+        } else if (zone.shapeType === "circle") {
           ctx.beginPath();
           ctx.arc(zone.center.x, zone.center.y, zone.radius, 0, Math.PI * 2);
           ctx.stroke();
-        } else if (zone.type === "polygon") {
+        } else if (zone.shapeType === "polygon") {
           ctx.beginPath();
           ctx.moveTo(zone.points[0].x, zone.points[0].y);
           zone.points.slice(1).forEach((point) => {
@@ -386,7 +387,7 @@ const FloorPlanV4 = () => {
       ctx.strokeStyle = "#FF8800";
       ctx.lineWidth = 2;
 
-      if (currentZone.type === "rectangle") {
+      if (currentZone.shapeType === "rectangle") {
         const x = Math.min(currentZone.start.x, currentZone.end.x);
         const y = Math.min(currentZone.start.y, currentZone.end.y);
         const width = Math.abs(currentZone.end.x - currentZone.start.x);
@@ -396,7 +397,7 @@ const FloorPlanV4 = () => {
         ctx.rect(x, y, width, height);
         ctx.fill();
         ctx.stroke();
-      } else if (currentZone.type === "circle") {
+      } else if (currentZone.shapeType === "circle") {
         const dx = currentZone.end.x - currentZone.start.x;
         const dy = currentZone.end.y - currentZone.start.y;
         const radius = Math.sqrt(dx * dx + dy * dy);
@@ -417,7 +418,7 @@ const FloorPlanV4 = () => {
     // Drawing polygon in progress
     if (
       tool === "zone" &&
-      zoneType === "polygon" &&
+      zoneShapeType === "polygon" &&
       currentPolygonPoints.length > 0
     ) {
       ctx.strokeStyle = "#FF8800";
@@ -533,6 +534,7 @@ const FloorPlanV4 = () => {
     walls,
     rooms,
     pois,
+    zones,
     doors,
     windows,
     currentWall,
@@ -554,7 +556,7 @@ const FloorPlanV4 = () => {
         tool === "select" &&
         (event.key === "Delete" || event.key === "Backspace")
       ) {
-        if (!selectedItem) return; // Prevents the error when selectedItem is null
+        if (!selectedItem) return;
 
         if (selectedItem.type === "wall") {
           setWalls(walls.filter((w) => w.id !== selectedItem.id));
@@ -567,7 +569,7 @@ const FloorPlanV4 = () => {
           setDoors(doors.filter((d) => d.id !== selectedItem.id));
         } else if (selectedItem && selectedItem.type === "zone") {
           setZones(zones.filter((z) => z.id !== selectedItem.id));
-          setSelectedItem(null);
+          console.log("Zone supprimée :", selectedItem.id);
         }
 
         setSelectedItem(null);
@@ -576,7 +578,7 @@ const FloorPlanV4 = () => {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [tool, selectedItem, walls, doors, rooms, pois]);
+  }, [tool, selectedItem, walls, doors, rooms, pois, zones]);
 
   const handleMouseDown = (e) => {
     const canvas = canvasRef.current;
@@ -689,16 +691,16 @@ const FloorPlanV4 = () => {
     } else if (tool === "zone") {
       const mousePos = getMousePos(canvas, e, offset, scale);
 
-      if (zoneType === "rectangle" || zoneType === "circle") {
+      if (zoneShapeType === "rectangle" || zoneShapeType === "circle") {
         setCurrentZone({
           id: Date.now(),
-          type: zoneType,
+          shapeType: zoneShapeType,
           start: { x: mousePos.x, y: mousePos.y },
           end: { x: mousePos.x, y: mousePos.y },
           name: "Nouvelle zone",
         });
         setIsDrawing(true);
-      } else if (zoneType === "polygon") {
+      } else if (zoneShapeType === "polygon") {
         // Pour le polygone, on ajoute des points à chaque clic
         if (
           currentPolygonPoints.length === 0 ||
@@ -713,7 +715,7 @@ const FloorPlanV4 = () => {
           if (currentPolygonPoints.length >= 3) {
             const newZone = {
               id: Date.now(),
-              type: "polygon",
+              shapeType: "polygon",
               points: [...currentPolygonPoints],
               name: "Nouvelle zone",
             };
@@ -735,6 +737,8 @@ const FloorPlanV4 = () => {
         setPois(pois.filter((o) => o.id !== selectedItem.id));
       } else if (selectedItem.type === "door") {
         setDoors(doors.filter((d) => d.id !== selectedItem.id));
+      } else if (selectedItem.type === "zone") {
+        setZones(zones.filter((z) => z.id !== selectedItem.id));
       }
       setSelectedItem(null);
     }
@@ -978,7 +982,10 @@ const FloorPlanV4 = () => {
     if (isDrawing && tool === "zone" && currentZone) {
       const mousePos = getMousePos(canvas, e, offset, scale);
 
-      if (currentZone.type === "rectangle" || currentZone.type === "circle") {
+      if (
+        currentZone.shapeType === "rectangle" ||
+        currentZone.shapeType === "circle"
+      ) {
         setCurrentZone({
           ...currentZone,
           end: { x: mousePos.x, y: mousePos.y },
@@ -1040,13 +1047,14 @@ const FloorPlanV4 = () => {
     } else if (isDrawing && tool === "zone") {
       if (
         currentZone &&
-        (currentZone.type === "rectangle" || currentZone.type === "circle")
+        (currentZone.shapeType === "rectangle" ||
+          currentZone.shapeType === "circle")
       ) {
         const dx = currentZone.end.x - currentZone.start.x;
         const dy = currentZone.end.y - currentZone.start.y;
 
         if (
-          currentZone.type === "rectangle" &&
+          currentZone.shapeType === "rectangle" &&
           Math.abs(dx) > 10 &&
           Math.abs(dy) > 10
         ) {
@@ -1061,7 +1069,7 @@ const FloorPlanV4 = () => {
           setShowZoneForm(true);
           setNewZoneName("");
         } else if (
-          currentZone.type === "circle" &&
+          currentZone.shapeType === "circle" &&
           Math.sqrt(dx * dx + dy * dy) > 10
         ) {
           const centerX = currentZone.start.x;
@@ -1123,7 +1131,7 @@ const FloorPlanV4 = () => {
     }
     // Ajoutez ceci dans la fonction findItemAt
     for (const zone of zones) {
-      if (zone.type === "rectangle") {
+      if (zone.shapeType === "rectangle") {
         if (
           pos.x >= zone.x &&
           pos.x <= zone.x + zone.width &&
@@ -1132,14 +1140,14 @@ const FloorPlanV4 = () => {
         ) {
           return { type: "zone", id: zone.id };
         }
-      } else if (zone.type === "circle") {
+      } else if (zone.shapeType === "circle") {
         const dx = pos.x - zone.center.x;
         const dy = pos.y - zone.center.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         if (distance <= zone.radius) {
           return { type: "zone", id: zone.id };
         }
-      } else if (zone.type === "polygon") {
+      } else if (zone.shapeType === "polygon") {
         if (isInsidePolygon(pos, zone.points)) {
           return { type: "zone", id: zone.id };
         }
@@ -1401,31 +1409,31 @@ const FloorPlanV4 = () => {
               <div className="pl-4 space-y-1 mt-1">
                 <button
                   className={`w-full px-2 py-1 text-sm rounded ${
-                    zoneType === "rectangle"
+                    zoneShapeType === "rectangle"
                       ? "bg-blue-300 text-white"
                       : "bg-gray-100"
                   }`}
-                  onClick={() => setZoneType("rectangle")}
+                  onClick={() => setZoneShapeType("rectangle")}
                 >
                   Rectangle
                 </button>
                 <button
                   className={`w-full px-2 py-1 text-sm rounded ${
-                    zoneType === "circle"
+                    zoneShapeType === "circle"
                       ? "bg-blue-300 text-white"
                       : "bg-gray-100"
                   }`}
-                  onClick={() => setZoneType("circle")}
+                  onClick={() => setZoneShapeType("circle")}
                 >
                   Cercle
                 </button>
                 <button
                   className={`w-full px-2 py-1 text-sm rounded ${
-                    zoneType === "polygon"
+                    zoneShapeType === "polygon"
                       ? "bg-blue-300 text-white"
                       : "bg-gray-100"
                   }`}
-                  onClick={() => setZoneType("polygon")}
+                  onClick={() => setZoneShapeType("polygon")}
                 >
                   Polygone
                 </button>
@@ -1632,6 +1640,26 @@ const FloorPlanV4 = () => {
               onChange={(e) => setNewZoneName(e.target.value)}
               className="border p-2 rounded w-full mb-2"
             />
+            <div className="mb-3">
+              <label
+                htmlFor="zone-type"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Type de zone:
+              </label>
+              <select
+                id="zone-type"
+                className="border p-2 rounded w-full"
+                value={zoneType}
+                onChange={(e) => setZoneType(e.target.value)}
+              >
+                <option value="circulation">Zone de circulation</option>
+                <option value="danger">Zone de danger</option>
+                <option value="work">Zone de travail</option>
+                <option value="service">Zone de service</option>
+              </select>
+            </div>
+
             <div className="flex justify-end gap-2">
               <button
                 className="px-3 py-1 bg-gray-400 text-white rounded"
