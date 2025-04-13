@@ -505,9 +505,7 @@ const FloorPlanV4 = () => {
             />
           </div>
 
-          <div className="h-48 bg-gray-100 border-t p-4 overflow-auto">
-            
-          </div>
+          
         </div>
       </div>
       {showPoiForm && (

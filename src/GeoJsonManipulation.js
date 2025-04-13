@@ -96,7 +96,7 @@ const exportToGeoJSON = (walls, pois, doors, windows, imageInfo) => {
           "properties": {
             "class_name": "poi",
             "name": poi.name || `POI ${index + 1}`,
-            "type": poi.type || "default",
+            "type": poi.category || "default",
             "description": poi.description || "",
             "icon": poi.icon || null,
             "original_id": poi.id
@@ -272,7 +272,7 @@ const initializeFloorFromGeoJSONSystem = (geoJSONData) => {
             x: x,
             y: y,
             name: feature.properties.name || `POI ${newPOIs.length + 1}`,
-            type: feature.properties.type || "default",
+            category: feature.properties.type || "default",
             description: feature.properties.description || "",
             icon: feature.properties.icon || null,
             properties: feature.properties || {}
