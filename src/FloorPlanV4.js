@@ -218,7 +218,7 @@ const FloorPlanV4 = () => {
 
     // Dessiner le chemin calculé
     if (currentPath.length > 1) {
-        console.log("Current path reho ktermn 1 : **************************************************************************************************************", currentPath);
+      console.log("Current path reho ktermn 1 : **************************************************************************************************************", currentPath);
       ctx.strokeStyle = '#00ff00';
       ctx.lineWidth = 2;
       ctx.beginPath();
