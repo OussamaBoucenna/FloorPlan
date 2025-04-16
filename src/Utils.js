@@ -227,4 +227,99 @@ export const snapToGrid = (point, gridSize = 10) => {
     y: Math.round(point.y / gridSize) * gridSize
   };
 };
-  export  {getMousePos , isNearPoint,isInsidePolygon , getCellsOnLine , calculateDoorPosition , createGrid}
+
+const findItemAt = (pos,doors,pois,zones,walls,rooms) => {
+  for (const door of doors) {
+    if (isNearLine(pos, door.start, door.end)) {
+      return { type: "door", id: door.id };
+    }
+  }
+
+  for (const obj of pois) {
+    if (
+      pos.x >= obj.x &&
+      pos.x <= obj.x + obj.width &&
+      pos.y >= obj.y &&
+      pos.y <= obj.y + obj.height
+    ) {
+      return { type: "poi", id: obj.id };
+    }
+  }
+  // Ajoutez ceci dans la fonction findItemAt
+  for (const zone of zones) {
+    if (zone.shapeType === "rectangle") {
+      if (
+        pos.x >= zone.x &&
+        pos.x <= zone.x + zone.width &&
+        pos.y >= zone.y &&
+        pos.y <= zone.y + zone.height
+      ) {
+        return { type: "zone", id: zone.id };
+      }
+    } else if (zone.shapeType === "circle") {
+      const dx = pos.x - zone.center.x;
+      const dy = pos.y - zone.center.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance <= zone.radius) {
+        return { type: "zone", id: zone.id };
+      }
+    } else if (zone.shapeType === "polygon") {
+      if (isInsidePolygon(pos, zone.points)) {
+        return { type: "zone", id: zone.id };
+      }
+    }
+  }
+
+  for (const wall of walls) {
+    if (isNearLine(pos, wall.start, wall.end)) {
+      return { type: "wall", id: wall.id };
+    }
+  }
+
+  for (const room of rooms) {
+    if (isInsidePolygon(pos, room.points)) {
+      return { type: "room", id: room.id };
+    }
+  }
+
+  return null;
+};
+
+const isNearLine = (point, lineStart, lineEnd) => {
+  const distance = distanceToLine(point, lineStart, lineEnd);
+  return distance < 15;
+};
+
+const distanceToLine = (point, lineStart, lineEnd) => {
+  const A = point.x - lineStart.x;
+  const B = point.y - lineStart.y;
+  const C = lineEnd.x - lineStart.x;
+  const D = lineEnd.y - lineStart.y;
+
+  const dot = A * C + B * D;
+  const lenSq = C * C + D * D;
+  let param = -1;
+
+  if (lenSq !== 0) param = dot / lenSq;
+
+  let xx, yy;
+
+  if (param < 0) {
+    xx = lineStart.x;
+    yy = lineStart.y;
+  } else if (param > 1) {
+    xx = lineEnd.x;
+    yy = lineEnd.y;
+  } else {
+    xx = lineStart.x + param * C;
+    yy = lineStart.y + param * D;
+  }
+
+  const dx = point.x - xx;
+  const dy = point.y - yy;
+
+  return Math.sqrt(dx * dx + dy * dy);
+};
+
+
+  export  {getMousePos , isNearPoint,isInsidePolygon , getCellsOnLine , calculateDoorPosition , createGrid,findItemAt, isNearLine,distanceToLine}

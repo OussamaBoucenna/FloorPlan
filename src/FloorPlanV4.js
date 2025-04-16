@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { movePOI, stopDraggingPOI, zoomPOI , findClickedPOI, getCanvasClickPosition ,handPoi ,drawPOIs,handlePOI,handleObjectDrag } from './pois';
 import {updateCanvasSize} from './canvasUtils'
 import GeoJsonManipulation  from './GeoJsonManipulation';
-import { getMousePos, calculateDoorPosition,calculatePolygonArea} from './Utils';
+import { getMousePos, calculateDoorPosition,calculatePolygonArea, findItemAt} from './Utils';
 import {displayMeasurements , drawGrid} from './Draw';
 import {drawWalls} from './handlers/handleWalls'
 import {drawDoors ,handleDoor } from './handlers/handleDoors'
@@ -12,6 +12,7 @@ import {handlePan} from './handlers/handlePan';
 import {handlePath ,drawPath} from './handlers/handlNavigation';
 import {handleSelect} from './handlers/handleSelect';
 import {handleErase,handleDrawingStart,handleDrawingEnd,isNearPoint } from './handlers/handleErase';
+import { drawZones, handleZoneDrawing } from './handlers/handkeZones';
 
 const FloorPlanV4 = () => {
 
@@ -23,6 +24,17 @@ const FloorPlanV4 = () => {
     default: "./logo.svg",
   };
 
+  // zones states variables 
+  // start 
+  const [zones, setZones] = useState([]);
+  const [currentZone, setCurrentZone] = useState(null);
+  const [zoneShapeType, setZoneShapeType] = useState("rectangle"); // rectangle, circle, polygon
+  const [zoneType, setZoneType] = useState("circulation"); //zone de circulation,zone de travail,zone de danger,zone de service..
+  const [currentPolygonPoints, setCurrentPolygonPoints] = useState([]);
+  const [showZoneForm, setShowZoneForm] = useState(false);
+  const [newZoneName, setNewZoneName] = useState("");
+  // end
+  
   const [showPoiForm, setShowPoiForm] = useState(false);
   const [poiName, setPoiName] = useState('');
   const [poiCategory, setPoiCategory] = useState('');
@@ -93,9 +105,11 @@ const FloorPlanV4 = () => {
     drawPOIs(ctx, pois, selectedItem, preloadedIcons, scale);
     drawPath(ctx, pathPoints, currentPath);
     drawCurrentRoom(ctx, currentRoom, isDrawing);
-  
+    
+    // draw zones 
+    drawZones(ctx,scale,zones,isDrawing,selectedItem,currentZone,currentPolygonPoints,zoneShapeType)
     ctx.restore();
-  }, [walls, rooms, pois, doors, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, tool]);
+  }, [walls, rooms, pois, doors,zones, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, tool]);
   
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -111,13 +125,16 @@ const FloorPlanV4 = () => {
           setPois(pois.filter((o) => o.id !== selectedItem.id));
         } else if (selectedItem.type === "door") {
           setDoors(doors.filter((d) => d.id !== selectedItem.id));
+        }else if (selectedItem && selectedItem.type === "zone") {
+          setZones(zones.filter((z) => z.id !== selectedItem.id));
+          console.log("Zone supprimée :", selectedItem.id);
         }
         setSelectedItem(null);
       }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [tool, selectedItem, walls, doors, rooms, pois]);
+  }, [tool, selectedItem, walls, doors, zones, rooms, pois]);
  
 
   const handleMouseDown = (e) => {
@@ -141,10 +158,16 @@ const FloorPlanV4 = () => {
       case 'poi':
         handlePOI(e, canvasRef, setPendingPoi, setShowPoiForm, offset, scale);
         break;
-        case 'room':
+      case 'room':
           handleRoomDrawing(mousePos,currentRoom,setCurrentRoom,setRooms,calculatePolygonArea,setIsDrawing,isNearPoint );
           break;
-      default:
+      case "zone":
+        handleZoneDrawing(mousePos,zoneShapeType,zones, setCurrentZone,setIsDrawing,currentPolygonPoints,setCurrentPolygonPoints,setZones,setShowZoneForm,setNewZoneName)
+      case "select":
+        const item = findItemAt(mousePos,doors,pois,zones,walls,rooms);
+        setSelectedItem(item);
+      break;
+          default:
         handleDrawingStart(tool, mousePos, setCurrentWall, setCurrentWindow, setCurrentRoom, currentRoom, isNearPoint);
         setIsDrawing(true);  
     }
@@ -182,6 +205,20 @@ const FloorPlanV4 = () => {
       const ctx = canvas.getContext('2d');
       displayMeasurements(ctx, currentWindow.start, { x: mousePos.x, y: mousePos.y });
     }
+    // zone -mouse move 
+    if (isDrawing && tool === "zone" && currentZone) {
+      const mousePos = getMousePos(canvas, e, offset, scale);
+
+      if (
+        currentZone.shapeType === "rectangle" ||
+        currentZone.shapeType === "circle"
+      ) {
+        setCurrentZone({
+          ...currentZone,
+          end: { x: mousePos.x, y: mousePos.y },
+        });
+      }
+    }
   };
   
   const handleMouseUp = (e) => {
@@ -214,6 +251,51 @@ const FloorPlanV4 = () => {
       }
 
       setCurrentWindow(null);
+    }else if (isDrawing && tool === "zone") {
+      if (
+        currentZone &&
+        (currentZone.shapeType === "rectangle" ||
+          currentZone.shapeType === "circle")
+      ) {
+        const dx = currentZone.end.x - currentZone.start.x;
+        const dy = currentZone.end.y - currentZone.start.y;
+
+        if (
+          currentZone.shapeType === "rectangle" &&
+          Math.abs(dx) > 10 &&
+          Math.abs(dy) > 10
+        ) {
+          const newZone = {
+            ...currentZone,
+            x: Math.min(currentZone.start.x, currentZone.end.x),
+            y: Math.min(currentZone.start.y, currentZone.end.y),
+            width: Math.abs(dx),
+            height: Math.abs(dy),
+          };
+          setZones([...zones, newZone]);
+          setShowZoneForm(true);
+          setNewZoneName("");
+        } else if (
+          currentZone.shapeType === "circle" &&
+          Math.sqrt(dx * dx + dy * dy) > 10
+        ) {
+          const centerX = currentZone.start.x;
+          const centerY = currentZone.start.y;
+          const radius = Math.sqrt(dx * dx + dy * dy);
+
+          const newZone = {
+            ...currentZone,
+            center: { x: centerX, y: centerY },
+            radius: radius,
+          };
+          setZones([...zones, newZone]);
+          setShowZoneForm(true);
+          setNewZoneName("");
+        }
+
+        setCurrentZone(null);
+      }
+      setIsDrawing(false);
     }
 
     setIsDrawing(false);
@@ -413,6 +495,48 @@ const FloorPlanV4 = () => {
             >
               Mur
             </button>
+            <button
+              className={`w-full px-3 py-2 rounded ${
+                tool === "zone" ? "bg-orange-600 text-white" : "bg-gray-200"
+              }`}
+              onClick={() => setTool("zone")}
+            >
+              Zone
+            </button>
+            {tool === "zone" && (
+              <div className="pl-4 space-y-1 mt-1">
+                <button
+                  className={`w-full px-2 py-1 text-sm rounded ${
+                    zoneShapeType === "rectangle"
+                      ? "bg-blue-300 text-white"
+                      : "bg-gray-100"
+                  }`}
+                  onClick={() => setZoneShapeType("rectangle")}
+                >
+                  Rectangle
+                </button>
+                <button
+                  className={`w-full px-2 py-1 text-sm rounded ${
+                    zoneShapeType === "circle"
+                      ? "bg-blue-300 text-white"
+                      : "bg-gray-100"
+                  }`}
+                  onClick={() => setZoneShapeType("circle")}
+                >
+                  Cercle
+                </button>
+                <button
+                  className={`w-full px-2 py-1 text-sm rounded ${
+                    zoneShapeType === "polygon"
+                      ? "bg-blue-300 text-white"
+                      : "bg-gray-100"
+                  }`}
+                  onClick={() => setZoneShapeType("polygon")}
+                >
+                  Polygone
+                </button>
+              </div>
+            )}
             <button
               className={`w-full px-3 py-2 rounded ${tool === 'door' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
               onClick={() => setTool('door')}
