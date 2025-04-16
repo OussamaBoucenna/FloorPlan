@@ -13,7 +13,7 @@ import {handlePath ,drawPath} from './handlers/handlNavigation';
 import {handleSelect} from './handlers/handleSelect';
 import {handleErase,handleDrawingStart,handleDrawingEnd,isNearPoint } from './handlers/handleErase';
 import { drawZones, handleZoneDrawing } from './handlers/handkeZones';
-
+import {useFloorPlanZones} from "./hooks/useZonesEditor"
 const FloorPlanV4 = () => {
 
   // Icons for different categories
@@ -43,8 +43,8 @@ const FloorPlanV4 = () => {
   const [selectedPOI, setSelectedPOI] = useState(null);
   const [newPoiName, setNewPoiName] = useState(""); // Pour stocker le nouveau nom
   const [tool, setTool] = useState('wall');
-  const [walls, setWalls] = useState([]);
-  const [rooms, setRooms] = useState([]);
+  //const [walls, setWalls] = useState([]);
+  //const [rooms, setRooms] = useState([]);
   const [pois, setPois] = useState([]);
   const [doors, setDoors] = useState([]);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -71,6 +71,33 @@ const FloorPlanV4 = () => {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  const {
+    drawRooms,
+    drawWall,
+    handleSelectDoorType,
+    drawWallPreview,
+    getCanvasPoint,
+    handleMouseDown : mouseDown,
+    handleMouseMove:mouseMove,
+    handleMouseUp:mouseUp,
+    setRooms,
+    setAction,
+    currentPoint,
+    startPoint,
+    selectedVertex,
+    wallThickness,
+    mode,
+    placedObjects,
+    hoverVertex,
+    selectedRoom,
+    binderRef,
+    binderVersion,
+    nearNodePoint,
+    walls,
+    rooms,
+    isPreview,
+  }= useFloorPlanZones(null,canvasRef)
 
   useEffect(() => {
     const handleResize = () => updateCanvasSize(canvasContainerRef, setCanvasSize);
@@ -115,7 +142,6 @@ const FloorPlanV4 = () => {
     const handleKeyDown = (event) => {
       if (tool === "select" && (event.key === "Delete" || event.key === "Backspace")) {
         if (!selectedItem) return; // Prevents the error when selectedItem is null
-  
         if (selectedItem.type === "wall") {
           setWalls(walls.filter((w) => w.id !== selectedItem.id));
           setDoors(doors.filter((d) => d.wallId !== selectedItem.id));
