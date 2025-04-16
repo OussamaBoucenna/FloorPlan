@@ -173,7 +173,7 @@ export default class Obj2D {
         this.drawSingleDoor(ctx, halfSize, halfThick, isPreview,"#7EBDC2","#7EBDC2");
         break;
       case 'doorDouble':
-        this.drawDoubleDoor(ctx, halfSize, halfThick, isPreview);
+        this.drawDoubleDoor(ctx, halfSize, halfThick,isPreview, '#7EBDC2', '#9CCFD9');
         break;
       case 'windowSingle':
         this.drawSingleWindow(ctx, halfSize, halfThick, isPreview);
@@ -266,70 +266,126 @@ export default class Obj2D {
 }
 
   
-  drawDoubleDoor(ctx, halfSize, halfThick, isPreview) {
-    // Door frame
-    ctx.fillStyle = isPreview ? 'rgba(159, 178, 226, 0.8)' : '#9fb2e2';
-    ctx.fillRect(-halfSize, -halfThick, this.size, this.thick);
-    
-    // Door panels
-    const inset = 1.5;
-    ctx.fillStyle = isPreview ? 'rgba(179, 198, 246, 0.8)' : '#b3c6f6';
-    ctx.fillRect(-halfSize + inset, -halfThick + inset, this.size/2 - inset*1.5, this.thick - 2*inset);
-    ctx.fillRect(0 + inset/2, -halfThick + inset, this.size/2 - inset*1.5, this.thick - 2*inset);
-    
-    // Door meeting line
+drawDoubleDoor(ctx, halfSize, halfThick, isPreview, arcBgColor = null, arcStrokeColor = null) {
+  const doorWidth = this.size;
+  const doorHeight = this.thick;
+  const arcRadius = doorWidth * 0.45;
+  const pivotLeft = -halfSize;
+  const pivotRight = halfSize;
+
+  // --- Left Swing Arc Background ---
+  ctx.beginPath();
+  ctx.moveTo(pivotLeft, 0);
+  ctx.arc(pivotLeft, 0, arcRadius, -Math.PI / 2, 0, false);
+  ctx.closePath();
+
+  ctx.fillStyle = arcBgColor
+    ? arcBgColor
+    : (() => {
+        const grad = ctx.createRadialGradient(
+          pivotLeft, 0, arcRadius * 0.2,
+          pivotLeft, 0, arcRadius * 1.1
+        );
+        grad.addColorStop(0, 'rgba(210, 220, 235, 0.1)');
+        grad.addColorStop(1, 'rgba(200, 210, 225, 0.03)');
+        return grad;
+      })();
+  ctx.fill();
+
+  // --- Right Swing Arc Background ---
+  ctx.beginPath();
+  ctx.moveTo(pivotRight, 0);
+  ctx.arc(pivotRight, 0, arcRadius, -Math.PI, -Math.PI / 2, false);
+  ctx.closePath();
+
+  ctx.fillStyle = arcBgColor
+    ? arcBgColor
+    : (() => {
+        const grad = ctx.createRadialGradient(
+          pivotRight, 0, arcRadius * 0.2,
+          pivotRight, 0, arcRadius * 1.1
+        );
+        grad.addColorStop(0, 'rgba(210, 220, 235, 0.1)');
+        grad.addColorStop(1, 'rgba(200, 210, 225, 0.03)');
+        return grad;
+      })();
+  ctx.fill();
+
+  // --- Door Frame ---
+  ctx.fillStyle = isPreview ? 'rgba(159, 178, 226, 0.6)' : '#e0e8f5';
+  ctx.fillRect(-halfSize, -halfThick, doorWidth, doorHeight);
+
+  // --- Door Panels ---
+  ctx.fillStyle = isPreview ? 'rgba(200, 210, 230, 0.6)' : '#f0f4fb';
+  const inset = 1.5;
+  ctx.fillRect(-halfSize + inset, -halfThick + inset, halfSize - 2, doorHeight - 2 * inset);
+  ctx.fillRect(inset / 2, -halfThick + inset, halfSize - 2, doorHeight - 2 * inset);
+
+  // --- Panel Details ---
+  if (doorWidth > 30) {
+    ctx.strokeStyle = '#d0d8e5';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(-halfSize + 4, -halfThick + 4, halfSize - 8, doorHeight - 8);
+    ctx.strokeRect(4, -halfThick + 4, halfSize - 8, doorHeight - 8);
+
+    // Handles
+    ctx.fillStyle = '#a0a8b5';
     ctx.beginPath();
-    ctx.moveTo(0, -halfThick);
-    ctx.lineTo(0, halfThick);
-    ctx.strokeStyle = '#333';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    
-    // Panel details if door is large enough
-    if (this.size > 30) {
-      // Door handles
-      ctx.fillStyle = '#666';
-      ctx.beginPath();
-      ctx.arc(-5, 0, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(5, 0, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-      
-      // Swing arcs for both doors
-      const arcRadius = this.size * 0.45;
-      ctx.strokeStyle = '#666';
-      ctx.lineWidth = 0.8;
-      ctx.setLineDash([3, 3]);
-      
-      // Left door swing
-      ctx.beginPath();
-      ctx.arc(-halfSize, 0, arcRadius, -Math.PI/2, 0, false);
-      ctx.stroke();
-      
-      // Right door swing
-      ctx.beginPath();
-      ctx.arc(halfSize, 0, arcRadius, -Math.PI, -Math.PI/2, false);
-      ctx.stroke();
-      
-      ctx.setLineDash([]);
-    }
-    
-    // Door lines
+    ctx.arc(-halfSize + 12, 0, 1.8, 0, Math.PI * 2);
+    ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(-halfSize, 0);
-    ctx.lineTo(-halfSize + this.size*0.45, 0);
-    ctx.moveTo(halfSize, 0);
-    ctx.lineTo(halfSize - this.size*0.45, 0);
-    ctx.strokeStyle = '#333';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    
-    // Door outline
-    ctx.strokeStyle = '#333';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(-halfSize, -halfThick, this.size, this.thick);
+    ctx.arc(halfSize - 12, 0, 1.8, 0, Math.PI * 2);
+    ctx.fill();
   }
+
+  // --- Swing Arc Lines ---
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = arcStrokeColor
+    ? arcStrokeColor
+    : (isPreview ? 'rgba(160, 170, 180, 0.4)' : '#d0d8e0');
+  ctx.lineWidth = 0.8;
+
+  // Left arc line
+  ctx.beginPath();
+  ctx.arc(pivotLeft, 0, arcRadius, -Math.PI / 2, 0, false);
+  ctx.stroke();
+
+  // Right arc line
+  ctx.beginPath();
+  ctx.arc(pivotRight, 0, arcRadius, -Math.PI, -Math.PI / 2, false);
+  ctx.stroke();
+
+  ctx.setLineDash([]);
+
+  // --- Center Divider Line ---
+  ctx.beginPath();
+  ctx.moveTo(0, -halfThick);
+  ctx.lineTo(0, halfThick);
+  ctx.strokeStyle = '#a0a8b5';
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // --- Door Outline ---
+  ctx.strokeStyle = '#c0c8d0';
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(-halfSize, -halfThick, doorWidth, doorHeight);
+
+  // --- Panel Edge Lines ---
+  ctx.beginPath();
+  ctx.moveTo(pivotLeft, 0);
+  ctx.lineTo(pivotLeft + arcRadius, 0);
+  ctx.moveTo(pivotRight, 0);
+  ctx.lineTo(pivotRight - arcRadius, 0);
+  ctx.strokeStyle = '#a0a8b5';
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+}
+
+
+
+
   
   drawSingleWindow(ctx, halfSize, halfThick, isPreview, frameColor = '#ceecf0', outlineColor = '#333') {
     // --- Frame background ---
@@ -386,36 +442,58 @@ export default class Obj2D {
   
   
   drawDoubleWindow(ctx, halfSize, halfThick, isPreview) {
-    // Window frame
-    ctx.fillStyle = isPreview ? 'rgba(206, 236, 240, 0.8)' : '#ceecf0';
+    // Frame
+    ctx.fillStyle = isPreview ? 'rgba(206, 236, 240, 0.7)' : '#ceecf0';
     ctx.fillRect(-halfSize, -halfThick, this.size, this.thick);
-    
-    // Glass effect
-    const glassInset = 2;
-    ctx.fillStyle = isPreview ? 'rgba(230, 250, 255, 0.6)' : 'rgba(230, 250, 255, 0.8)';
-    ctx.fillRect(
-      -halfSize + glassInset, 
-      -halfThick + glassInset, 
-      this.size - 2*glassInset, 
-      this.thick - 2*glassInset
-    );
-    
-    // Window dividers (cross pattern)
+  
+    // Glass area
+    const glassInset = 2.5;
+    const glassX = -halfSize + glassInset;
+    const glassY = -halfThick + glassInset;
+    const glassW = this.size - glassInset * 2;
+    const glassH = this.thick - glassInset * 2;
+  
+    ctx.fillStyle = isPreview ? 'rgba(230, 250, 255, 0.4)' : 'rgba(230, 250, 255, 0.6)';
+    ctx.fillRect(glassX, glassY, glassW, glassH);
+  
+    // Gradient shine
+    const gradient = ctx.createLinearGradient(glassX, glassY, glassX + glassW, glassY + glassH);
+    gradient.addColorStop(0, 'rgba(255,255,255,0.2)');
+    gradient.addColorStop(1, 'rgba(200,220,255,0.05)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(glassX, glassY, glassW, glassH);
+  
+    // Divider lines (cross)
     ctx.beginPath();
     ctx.moveTo(-halfSize, 0);
     ctx.lineTo(halfSize, 0);
     ctx.moveTo(0, -halfThick);
     ctx.lineTo(0, halfThick);
-    ctx.strokeStyle = '#333';
+    ctx.strokeStyle = '#444';
     ctx.lineWidth = 1;
     ctx.stroke();
-    
-    // Window frame
+  
+    // Optional extra grid for large windows
+    if (this.size > 40) {
+      const third = this.size / 6;
+      ctx.beginPath();
+      ctx.moveTo(-halfSize + third, -halfThick);
+      ctx.lineTo(-halfSize + third, halfThick);
+      ctx.moveTo(halfSize - third, -halfThick);
+      ctx.lineTo(halfSize - third, halfThick);
+      ctx.strokeStyle = '#888';
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([2, 2]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  
+    // Frame outline
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(-halfSize, -halfThick, this.size, this.thick);
-    
-    // Add slight 3D effect
+  
+    // 3D Highlight effect
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 0.5;
     ctx.beginPath();
@@ -425,6 +503,7 @@ export default class Obj2D {
     ctx.lineTo(halfSize, -halfThick);
     ctx.stroke();
   }
+  
   
   drawSlidingDoor(ctx, halfSize, halfThick, isPreview) {
     // Door frame

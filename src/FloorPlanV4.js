@@ -4,7 +4,7 @@ import {updateCanvasSize} from './canvasUtils'
 import GeoJsonManipulation  from './GeoJsonManipulation';
 import { getMousePos, calculateDoorPosition,calculatePolygonArea, findItemAt} from './Utils';
 import {displayMeasurements , drawGrid} from './Draw';
-import {drawWalls} from './handlers/handleWalls'
+//import {drawWalls} from './handlers/handleWalls'
 import {drawDoors ,handleDoor } from './handlers/handleDoors'
 import {drawWindows } from './handlers/handleWindows'
 import {drawRooms ,handleRoomDrawing,drawCurrentRoom} from './handlers/handleRooms'
@@ -71,12 +71,17 @@ const FloorPlanV4 = () => {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-
+  // add ctxRef 
+  const ctxRef = useRef(null)
+  const onChangeTool=(tool)=>{
+    setTool(tool)
+  }
   const {
     drawRooms,
-    drawWall,
+    drawWalls,
     handleSelectDoorType,
     drawWallPreview,
+    setWalls,
     getCanvasPoint,
     handleMouseDown : mouseDown,
     handleMouseMove:mouseMove,
@@ -89,6 +94,7 @@ const FloorPlanV4 = () => {
     wallThickness,
     mode,
     placedObjects,
+    action,
     hoverVertex,
     selectedRoom,
     binderRef,
@@ -97,7 +103,7 @@ const FloorPlanV4 = () => {
     walls,
     rooms,
     isPreview,
-  }= useFloorPlanZones(null,canvasRef)
+  }= useFloorPlanZones(null,canvasRef,tool,onChangeTool)
 
   useEffect(() => {
     const handleResize = () => updateCanvasSize(canvasContainerRef, setCanvasSize);
@@ -105,6 +111,81 @@ const FloorPlanV4 = () => {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [canvasContainerRef, setCanvasSize]);
+
+
+  useEffect(()=>{
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    ctxRef.current = ctx;
+    // Set initial canvas size
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+
+    drawCanvas()
+  },[])
+
+
+
+  // drawCanvas function 
+  const drawCanvas = /*useCallback(*/() => {
+    if (!ctxRef.current) return;
+    const ctx = ctxRef.current;
+    const canvas = canvasRef.current;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Draw existing walls
+    //walls.forEach(wall => {
+      drawWalls(walls, ctx);
+   // });
+    
+    drawRooms(ctx, rooms);
+    /*if (selectedObject?.type === 'wall') {
+      drawWall(ctx, selectedObject, true);
+    }*/
+      if(placedObjects && placedObjects.length){
+        placedObjects.forEach(object => {
+          object.draw(ctxRef.current)
+        })
+      }
+
+    // Draw wall preview when in drawing mode
+    if ((tool === 'wall' || tool === 'partition') && action === 1 && startPoint && currentPoint) {
+      drawWallPreview(ctx, startPoint, currentPoint, 
+        mode === 'wall' ? wallThickness : 10);
+    }
+    
+    // Draw green circle indicator when near a wall node
+    if (nearNodePoint && tool != "select") {
+      ctx.beginPath();
+      ctx.arc(nearNodePoint.x, nearNodePoint.y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(92, 186, 121, 0.5)';
+      ctx.fill();
+      ctx.strokeStyle = '#5cba79';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    if (hoverVertex) {
+      ctx.beginPath();
+      ctx.arc(hoverVertex.x, hoverVertex.y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(92, 186, 121, 0.6)';
+      ctx.fill();
+      ctx.strokeStyle = '#5cba79';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    
+    if (selectedVertex) {
+      ctx.beginPath();
+      ctx.arc(selectedVertex.x, selectedVertex.y, 10, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(92, 186, 121, 0.8)';
+      ctx.fill();
+      ctx.strokeStyle = '#5cba79';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+  }
+
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -124,11 +205,17 @@ const FloorPlanV4 = () => {
       preloadedIcons[category] = new Image();
       preloadedIcons[category].src = categoryIcons[category];
     });
+
+    drawCanvas();
   
-    drawWalls(ctx, walls, selectedItem, displayMeasurements);
-    drawDoors(ctx, doors, selectedItem);
-    drawWindows(ctx, windows, selectedItem, displayMeasurements);
-    drawRooms(ctx, rooms, selectedItem);
+    // drawing objects 
+    if(binderRef.current && isPreview){
+      binderRef.current.draw(ctxRef.current,true)
+    }
+    //drawWalls(ctx, walls, selectedItem, displayMeasurements);
+  //  drawDoors(ctx, doors, selectedItem);
+    //drawWindows(ctx, windows, selectedItem, displayMeasurements);
+   // drawRooms(ctx, rooms, selectedItem);
     drawPOIs(ctx, pois, selectedItem, preloadedIcons, scale);
     drawPath(ctx, pathPoints, currentPath);
     drawCurrentRoom(ctx, currentRoom, isDrawing);
@@ -136,13 +223,13 @@ const FloorPlanV4 = () => {
     // draw zones 
     drawZones(ctx,scale,zones,isDrawing,selectedItem,currentZone,currentPolygonPoints,zoneShapeType)
     ctx.restore();
-  }, [walls, rooms, pois, doors,zones, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, tool]);
+  }, [walls, rooms, pois, doors,zones, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, tool,action,startPoint,currentPoint,nearNodePoint,binderRef,binderVersion,isPreview,placedObjects]);
   
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (tool === "select" && (event.key === "Delete" || event.key === "Backspace")) {
         if (!selectedItem) return; // Prevents the error when selectedItem is null
-        if (selectedItem.type === "wall") {
+       /* if (selectedItem.type === "wall") {
           setWalls(walls.filter((w) => w.id !== selectedItem.id));
           setDoors(doors.filter((d) => d.wallId !== selectedItem.id));
         } else if (selectedItem.type === "room") {
@@ -151,7 +238,7 @@ const FloorPlanV4 = () => {
           setPois(pois.filter((o) => o.id !== selectedItem.id));
         } else if (selectedItem.type === "door") {
           setDoors(doors.filter((d) => d.id !== selectedItem.id));
-        }else if (selectedItem && selectedItem.type === "zone") {
+        }else */if (selectedItem && selectedItem.type === "zone") {
           setZones(zones.filter((z) => z.id !== selectedItem.id));
           console.log("Zone supprimée :", selectedItem.id);
         }
@@ -164,16 +251,20 @@ const FloorPlanV4 = () => {
  
 
   const handleMouseDown = (e) => {
+    console.log("called ",tool)
     const canvas = canvasRef.current;
     const mousePos = getMousePos(canvas, e, offset, scale);
     handleObjectDrag(e, pois, setDraggingId, setOffset, offset, scale);
     handlePan(e, setIsDragging, setDragStart, offset, tool);
+    mouseDown(e,tool)
     switch (tool) {
       case 'path':
         handlePath(mousePos, pathPoints, setPathPoints, setCurrentPath, walls, doors);
         break;
       case 'select':
-        handleSelect(mousePos, setSelectedItem, doors, pois, walls, rooms);
+        handleSelect(mousePos, setSelectedItem,doors, pois,walls,rooms);
+       // const item = findItemAt(mousePos,doors,pois,zones,walls,rooms);
+        //setSelectedItem(item);
         break;
       case 'door':
         handleDoor(mousePos, selectedItem, walls, calculateDoorPosition, doors, setDoors);
@@ -189,20 +280,17 @@ const FloorPlanV4 = () => {
           break;
       case "zone":
         handleZoneDrawing(mousePos,zoneShapeType,zones, setCurrentZone,setIsDrawing,currentPolygonPoints,setCurrentPolygonPoints,setZones,setShowZoneForm,setNewZoneName)
-      case "select":
-        const item = findItemAt(mousePos,doors,pois,zones,walls,rooms);
-        setSelectedItem(item);
       break;
-          default:
+       /*   default:
         handleDrawingStart(tool, mousePos, setCurrentWall, setCurrentWindow, setCurrentRoom, currentRoom, isNearPoint);
-        setIsDrawing(true);  
+        setIsDrawing(true); */ 
     }
   };
 
   const handleMouseMove = (e) => {
     const canvas = canvasRef.current;
     const mousePos = getMousePos(canvas, e, offset, scale);
-
+    mouseMove(e,tool)
     if (draggingId !== null) {
       const { offsetX, offsetY } = e.nativeEvent;
       setPois(prevObjects => movePOI(prevObjects, draggingId, offsetX, offsetY, offset, scale));
@@ -218,19 +306,20 @@ const FloorPlanV4 = () => {
 
     if (!isDrawing) return;
 
-    if (tool === 'wall' && currentWall) {
+    /*if (tool === 'wall' && currentWall) {
       setCurrentWall({ ...currentWall, end: { x: mousePos.x, y: mousePos.y } });
 
       const ctx = canvas.getContext('2d');
       displayMeasurements(ctx, currentWall.start, { x: mousePos.x, y: mousePos.y });
-    }
+    }*/
 
-    if (tool === 'window' && currentWindow) {
+    /*if (tool === 'window' && currentWindow) {
       setCurrentWindow({ ...currentWindow, end: { x: mousePos.x, y: mousePos.y } });
 
       const ctx = canvas.getContext('2d');
       displayMeasurements(ctx, currentWindow.start, { x: mousePos.x, y: mousePos.y });
-    }
+    }*/
+   
     // zone -mouse move 
     if (isDrawing && tool === "zone" && currentZone) {
       const mousePos = getMousePos(canvas, e, offset, scale);
@@ -252,12 +341,13 @@ const FloorPlanV4 = () => {
     handleDrawingEnd(tool,mousePos,currentWall, setWalls,currentWindow, setWindows,currentRoom, setRooms,calculatePolygonArea,setCurrentRoom, setIsDrawing,isNearPoint );
     setIsDrawing(false); // Stop drawing mode
     setDraggingId(stopDraggingPOI());
+    mouseUp(e,tool)
     if (isDragging) {
       setIsDragging(false);
       return;
     }
     if (!isDrawing) return;
-    if (tool === 'wall' && currentWall) {
+   /* if (tool === 'wall' && currentWall) {
       const dx = currentWall.end.x - currentWall.start.x;
       const dy = currentWall.end.y - currentWall.start.y;
       const length = Math.sqrt(dx * dx + dy * dy);
@@ -277,7 +367,10 @@ const FloorPlanV4 = () => {
       }
 
       setCurrentWindow(null);
-    }else if (isDrawing && tool === "zone") {
+    }else*/
+    //mouseUp(e,tool)
+    
+    if (isDrawing && tool === "zone") {
       if (
         currentZone &&
         (currentZone.shapeType === "rectangle" ||
@@ -515,11 +608,23 @@ const FloorPlanV4 = () => {
         <div className="w-48 bg-gray-50 p-4 border-r flex flex-col">
           <h2 className="font-bold mb-2">Outils</h2>
           <div className="space-y-2 mb-4">
+          <button 
+          onClick={() => setTool('select')}
+          className={`w-full px-3 py-2 rounded ${tool === 'select' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+        >
+          Sélectionner
+        </button>
             <button
               className={`w-full px-3 py-2 rounded ${tool === 'wall' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
               onClick={() => setTool('wall')}
             >
-              Mur
+              Wall
+            </button>
+            <button
+              className={`w-full px-3 py-2 rounded ${tool === 'partition' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+              onClick={() => setTool('partition')}
+            >
+              Partition
             </button>
             <button
               className={`w-full px-3 py-2 rounded ${
@@ -563,12 +668,40 @@ const FloorPlanV4 = () => {
                 </button>
               </div>
             )}
-            <button
-              className={`w-full px-3 py-2 rounded ${tool === 'door' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-              onClick={() => setTool('door')}
-            >
-              Porte
-            </button>
+             <button
+        className={`w-full px-3 py-2 rounded ${tool === 'door' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+        onClick={() => setTool('door_mode')}
+      >
+        Porte
+      </button>
+            {tool === "door_mode" && (
+        <div className="pl-4 space-y-1 mt-1">
+          <button
+            className="w-full px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+            onClick={() => handleSelectDoorType('doorSingle')}
+          >
+            Single Door
+          </button>
+          <button
+            className="w-full px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+            onClick={() => handleSelectDoorType('doorDouble')}
+          >
+            Double Door
+          </button>
+          <button
+            className="w-full px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+            onClick={() => handleSelectDoorType('windowSingle')}
+          >
+            Single Window
+          </button>
+          <button
+            className="w-full px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+            onClick={() => handleSelectDoorType('windowDouble')}
+          >
+            Double Window
+          </button>
+        </div>
+      )}
             <button
               className={`w-full px-3 py-2 rounded ${tool === 'room' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
               onClick={() => setTool('room')}
@@ -596,12 +729,6 @@ const FloorPlanV4 = () => {
               }}
             >
               Navigation
-            </button>
-            <button
-              className={`w-full px-3 py-2 rounded ${tool === 'select' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-              onClick={() => setTool('select')}
-            >
-              Sélectionner
             </button>
             <button
               className={`w-full px-3 py-2 rounded ${tool === 'erase' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
@@ -652,6 +779,11 @@ const FloorPlanV4 = () => {
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
               className="absolute top-0 left-0 w-full h-full"
+              style={{ 
+                cursor: 
+                  nearNodePoint ? 'grab' : 
+                  (mode === 'line' || mode === 'partition') ? 'crosshair' : 'default' 
+              }}
             />
           </div>
 

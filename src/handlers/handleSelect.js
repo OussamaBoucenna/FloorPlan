@@ -36,12 +36,12 @@ const isNearLine = (point, lineStart, lineEnd) => {
   return distance < 15;
 };
 
-const findItemAt = (pos, doors, pois, walls, rooms) => {
-  for (const door of doors) {
+const findItemAt = (pos, pois) => {
+  /*for (const door of doors) {
     if (isNearLine(pos, door.start, door.end)) {
       return { type: 'door', id: door.id };
     }
-  }
+  }*/
 
   for (const obj of pois) {
     if (
@@ -51,7 +51,7 @@ const findItemAt = (pos, doors, pois, walls, rooms) => {
       return { type: 'poi', id: obj.id };
     }
   }
-
+/*
   for (const wall of walls) {
     if (isNearLine(pos, wall.start, wall.end)) {
       return { type: 'wall', id: wall.id };
@@ -62,12 +62,12 @@ const findItemAt = (pos, doors, pois, walls, rooms) => {
     if (isInsidePolygon(pos, room.points)) {
       return { type: 'room', id: room.id };
     }
-  }
+  }*/
 
   return null;
 };
 
 export const handleSelect = (mousePos, setSelectedItem, doors, pois, walls, rooms) => {
-  const item = findItemAt(mousePos, doors, pois, walls, rooms);
+  const item = findItemAt(mousePos, pois);
   setSelectedItem(item);
 };
