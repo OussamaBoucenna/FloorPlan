@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { movePOI, stopDraggingPOI, zoomPOI , findClickedPOI, getCanvasClickPosition ,handPoi ,drawPOIs,handlePOI,handleObjectDrag } from './pois';
+import { movePOI, stopDraggingPOI, zoomPOI , findClickedPOI, getCanvasClickPosition ,handPoi ,drawPOIs,handlePOI,handleObjectDrag, updatePOIProperties, POIEditForm } from './pois';
 import {updateCanvasSize} from './canvasUtils'
 import GeoJsonManipulation  from './GeoJsonManipulation';
 import { getMousePos, calculateDoorPosition,calculatePolygonArea, findItemAt} from './Utils';
@@ -37,6 +37,10 @@ const FloorPlanV4 = () => {
   
   const [showPoiForm, setShowPoiForm] = useState(false);
   const [poiName, setPoiName] = useState('');
+  const [newPoiWidth, setNewPoiWidth] = useState(50);
+  const [newPoiHeight, setNewPoiHeight] = useState(50);
+  const [poiWidth, setPoiWidth] = useState(50);
+  const [poiHeight, setPoiHeight] = useState(50);
   const [poiCategory, setPoiCategory] = useState('');
   const [pendingPoi, setPendingPoi] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
@@ -62,7 +66,9 @@ const FloorPlanV4 = () => {
     poiName, setPoiName, 
     poiCategory, setPoiCategory,
     pendingPoi, setPendingPoi, 
-    setPois, pois, categoryIcons
+    setPois, pois, categoryIcons,
+    poiWidth, setPoiWidth,
+    poiHeight, setPoiHeight
   );
   const canvasRef = useRef(null);
   const canvasContainerRef = useRef(null);
@@ -463,12 +469,14 @@ const FloorPlanV4 = () => {
   };
   
   const updatePOIName = () => {
-    setPois(prevObjects =>
-      prevObjects.map(obj =>
-        obj.id === selectedPOI.id ? { ...obj, name: newPoiName } : obj
-      )
-    );
-    setSelectedPOI(null); // Fermer la modification après sauvegarde
+    setPois(prevObjects => updatePOIProperties(
+      prevObjects, 
+      selectedPOI, 
+      newPoiName, 
+      newPoiWidth, 
+      newPoiHeight
+    ));
+    setSelectedPOI(null); // Close edit form after saving
   };
 
   const deletePOI = () => {
@@ -478,13 +486,15 @@ const FloorPlanV4 = () => {
 
   const handleCanvasClick = (e) => {
     const { offsetX, offsetY } = e.nativeEvent;
-
+  
     const clickedPOI = findClickedPOI(pois, offsetX, offsetY, offset, scale);
     if (clickedPOI) {
       setSelectedPOI(clickedPOI);
-      setNewPoiName(clickedPOI.name); 
+      setNewPoiName(clickedPOI.name);
+      setNewPoiWidth(clickedPOI.width);
+      setNewPoiHeight(clickedPOI.height);
     }
-
+  
     if (tool === "poi") {
       handlePOI(e, canvasRef, setPendingPoi, setShowPoiForm, offset, scale);
     }
@@ -791,69 +801,74 @@ const FloorPlanV4 = () => {
         </div>
       </div>
       {showPoiForm && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-4 rounded shadow-lg">
-            <h2 className="text-lg font-bold mb-2">Ajouter un Objet</h2>
-            <input
-              type="text"
-              placeholder="Nom de l'objet"
-              value={poiName}
-              onChange={(e) => setPoiName(e.target.value)}
-              className="border p-2 rounded w-full mb-2"
-            />
-            <select
-              value={poiCategory}
-              onChange={(e) => setPoiCategory(e.target.value)}
-              className="border p-2 rounded w-full mb-2"
-            >
-              <option value="">Sélectionner une catégorie</option>
-              <option value="furniture">Mobilier</option>
-              <option value="electronics">Électronique</option>
-              <option value="plant">Plante</option>
-            </select>
-            <div className="flex justify-end gap-2">
-              <button className="px-3 py-1 bg-gray-400 text-white rounded" onClick={() => setShowPoiForm(false)}>
-                Annuler
-              </button>
-              <button className="px-3 py-1 bg-blue-500 text-white rounded" onClick={handleCreatePoi}>
-                Ajouter
-              </button>
-            </div>
-          </div>
+  <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+    <div className="bg-white p-4 rounded shadow-lg">
+      <h2 className="text-lg font-bold mb-2">Ajouter un Objet</h2>
+      <input
+        type="text"
+        placeholder="Nom de l'objet"
+        value={poiName}
+        onChange={(e) => setPoiName(e.target.value)}
+        className="border p-2 rounded w-full mb-2"
+      />
+      <select
+        value={poiCategory}
+        onChange={(e) => setPoiCategory(e.target.value)}
+        className="border p-2 rounded w-full mb-2"
+      >
+        <option value="">Sélectionner une catégorie</option>
+        <option value="furniture">Mobilier</option>
+        <option value="electronics">Électronique</option>
+        <option value="plant">Plante</option>
+      </select>
+      {/* Add width and height inputs */}
+      <div className="flex gap-2 mb-2">
+        <div className="w-1/2">
+          <label className="block text-sm font-medium">Largeur :</label>
+          <input
+            type="number"
+            placeholder="Largeur"
+            value={poiWidth}
+            onChange={(e) => setPoiWidth(Number(e.target.value))}
+            className="border p-2 rounded w-full"
+          />
         </div>
-      )}
-       {selectedPOI && (
-      <div className="absolute top-10 left-10 bg-white p-4 shadow-lg border rounded">
-        <h2 className="text-lg font-bold">Modifier / Supprimer le POI</h2>
-        
-        <label className="block mt-2 text-sm font-medium">Nom du POI :</label>
-        <input 
-          type="text" 
-          value={newPoiName} 
-          onChange={handleNameChange} 
-          className="w-full border p-2 rounded mt-1"
-        />
-
-        <p className="text-sm text-gray-600 mt-2">
-          <strong>Catégorie:</strong> {selectedPOI.category}
-        </p>
-        <p className="text-sm text-gray-600">
-          <strong>Coordonnées:</strong> (X: {selectedPOI.x}, Y: {selectedPOI.y})
-        </p>
-
-        <div className="mt-4 flex space-x-2">
-          <button onClick={updatePOIName} className="px-3 py-1 bg-blue-500 text-white rounded">
-            Sauvegarder
-          </button>
-          <button onClick={deletePOI} className="px-3 py-1 bg-red-500 text-white rounded">
-            Supprimer
-          </button>
-          <button onClick={() => setSelectedPOI(null)} className="px-3 py-1 bg-gray-500 text-white rounded">
-            Annuler
-          </button>
+        <div className="w-1/2">
+          <label className="block text-sm font-medium">Hauteur :</label>
+          <input
+            type="number"
+            placeholder="Hauteur"
+            value={poiHeight}
+            onChange={(e) => setPoiHeight(Number(e.target.value))}
+            className="border p-2 rounded w-full"
+          />
         </div>
       </div>
-    )}
+      <div className="flex justify-end gap-2">
+        <button className="px-3 py-1 bg-gray-400 text-white rounded" onClick={() => setShowPoiForm(false)}>
+          Annuler
+        </button>
+        <button className="px-3 py-1 bg-blue-500 text-white rounded" onClick={handleCreatePoi}>
+          Ajouter
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+       {selectedPOI && (
+  <POIEditForm
+    selectedPOI={selectedPOI}
+    newPoiName={newPoiName}
+    setNewPoiName={setNewPoiName}
+    newPoiWidth={newPoiWidth}
+    setNewPoiWidth={setNewPoiWidth}
+    newPoiHeight={newPoiHeight}
+    setNewPoiHeight={setNewPoiHeight}
+    updatePOIName={updatePOIName}
+    deletePOI={deletePOI}
+    setSelectedPOI={setSelectedPOI}
+  />
+)}
     </div>
   );
 };

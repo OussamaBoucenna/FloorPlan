@@ -78,8 +78,10 @@ export const updatePOIPosition = (pois, draggingId, offsetX, offsetY, offset) =>
     const adjustedY = (offsetY - offset.y) / scale;
     
     return pois.find(obj =>
-      adjustedX >= obj.x - 15 && adjustedX <= obj.x + 15 &&
-      adjustedY >= obj.y - 15 && adjustedY <= obj.y + 15
+      adjustedX >= obj.x - obj.width / 2 && 
+      adjustedX <= obj.x + obj.width / 2 &&
+      adjustedY >= obj.y - obj.height / 2 && 
+      adjustedY <= obj.y + obj.height / 2
     );
   };
   
@@ -104,43 +106,54 @@ export const updatePOIPosition = (pois, draggingId, offsetX, offsetY, offset) =>
     setPendingPoi,
     setPois,
     pois,
-    categoryIcons
+    categoryIcons,
+    poiWidth,
+    setPoiWidth,
+    poiHeight,
+    setPoiHeight
   ) => {
     // Function to handle POI tool activation
     const handlePoiTool = () => {
       setTool("poi");
       setShowPoiForm(false);
     };
-     // In the handPoi function, modify handleCreatePoi
+    
+    // Modified to include width and height
     const handleCreatePoi = () => {
       if (!poiName || !poiCategory) {
         alert("Veuillez remplir tous les champs.");
         return;
       }
-
+  
       if (!pendingPoi) {
         alert("Aucune position sélectionnée pour le POI.");
         return;
       }
-
+      
+      // Use the provided width and height or default to 50
+      const width = poiWidth || 50;
+      const height = poiHeight || 50;
+  
       const newObj = {
         id: Date.now(),
-        x: pendingPoi.x, // This should already be correctly adjusted if handlePOI was updated
-        y: pendingPoi.y, // This should already be correctly adjusted if handlePOI was updated
-        width: 50,
-        height: 50,
-        type: "rectangle",
-        color: "#ff9966",
+        x: pendingPoi.x,
+        y: pendingPoi.y,
+        width: width,
+        height: height,
+        type: "poi",
+        color: "#fff",
         name: poiName,
         category: poiCategory,
         icon: categoryIcons[poiCategory] || categoryIcons.default,
       };
-
+  
       setPois(prevPois => [...(prevPois || []), newObj]);
       setShowPoiForm(false);
       setPendingPoi(null);
       setPoiName("");
       setPoiCategory("");
+      setPoiWidth(50); // Reset to default
+      setPoiHeight(50); // Reset to default
     };
   
     return {
@@ -148,29 +161,67 @@ export const updatePOIPosition = (pois, draggingId, offsetX, offsetY, offset) =>
       handleCreatePoi,
     };
   };
+  
 
   export const drawPOIs = (ctx, pois, selectedItem, preloadedIcons, scale) => {
-    const iconSize = 30;
-  
     pois.forEach((obj) => {
       const icon = preloadedIcons[obj.category] || preloadedIcons["default"];
   
+      // Draw the icon to fill the entire POI rectangle
       if (icon.complete) {
-        ctx.drawImage(icon, obj.x - iconSize / 2, obj.y - iconSize / 2, iconSize, iconSize);
+        ctx.drawImage(
+          icon,
+          obj.x - obj.width / 2,
+          obj.y - obj.height / 2,
+          obj.width,
+          obj.height
+        );
       } else {
         icon.onload = () => {
-          ctx.drawImage(icon, obj.x - iconSize / 2, obj.y - iconSize / 2, iconSize, iconSize);
+          ctx.drawImage(
+            icon,
+            obj.x - obj.width / 2,
+            obj.y - obj.height / 2,
+            obj.width,
+            obj.height
+          );
         };
       }
   
+      // Draw the POI name below the icon
       ctx.font = `${14 / scale}px Arial`;
       ctx.fillStyle = "#000";
       ctx.textAlign = "center";
+      ctx.fillText(obj.name, obj.x, obj.y + obj.height / 2 + 20 / scale);
   
+      // Highlight selected POI
       if (selectedItem && selectedItem.type === "poi" && selectedItem.id === obj.id) {
         ctx.strokeStyle = "#ff0000";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(obj.x - iconSize / 2, obj.y - iconSize / 2, iconSize, iconSize);
+        ctx.lineWidth = 2 / scale;
+        ctx.strokeRect(
+          obj.x - obj.width / 2,
+          obj.y - obj.height / 2,
+          obj.width,
+          obj.height
+        );
+  
+        // Draw resize handles
+        const handleSize = 8 / scale;
+        ctx.fillStyle = "#ff0000";
+        // Corner resize handles
+        [
+          { x: obj.x - obj.width / 2, y: obj.y - obj.height / 2 }, // Top-left
+          { x: obj.x + obj.width / 2, y: obj.y - obj.height / 2 }, // Top-right
+          { x: obj.x - obj.width / 2, y: obj.y + obj.height / 2 }, // Bottom-left
+          { x: obj.x + obj.width / 2, y: obj.y + obj.height / 2 } // Bottom-right
+        ].forEach(point => {
+          ctx.fillRect(
+            point.x - handleSize / 2,
+            point.y - handleSize / 2,
+            handleSize,
+            handleSize
+          );
+        });
       }
     });
   };
@@ -219,4 +270,72 @@ export const updatePOIPosition = (pois, draggingId, offsetX, offsetY, offset) =>
       }
     };
     
+
+    export const POIEditForm = ({ selectedPOI, newPoiName, setNewPoiName, updatePOIName, deletePOI, setSelectedPOI, newPoiWidth, setNewPoiWidth, newPoiHeight, setNewPoiHeight }) => {
+      return (
+        <div className="absolute top-10 left-10 bg-white p-4 shadow-lg border rounded">
+          <h2 className="text-lg font-bold">Modifier / Supprimer le POI</h2>
+          
+          <label className="block mt-2 text-sm font-medium">Nom du POI :</label>
+          <input 
+            type="text" 
+            value={newPoiName} 
+            onChange={(e) => setNewPoiName(e.target.value)} 
+            className="w-full border p-2 rounded mt-1"
+          />
     
+          <div className="flex gap-2 mt-2">
+            <div className="w-1/2">
+              <label className="block text-sm font-medium">Largeur :</label>
+              <input 
+                type="number" 
+                value={newPoiWidth} 
+                onChange={(e) => setNewPoiWidth(Number(e.target.value))} 
+                className="w-full border p-2 rounded mt-1"
+              />
+            </div>
+            <div className="w-1/2">
+              <label className="block text-sm font-medium">Hauteur :</label>
+              <input 
+                type="number" 
+                value={newPoiHeight} 
+                onChange={(e) => setNewPoiHeight(Number(e.target.value))} 
+                className="w-full border p-2 rounded mt-1"
+              />
+            </div>
+          </div>
+    
+          <p className="text-sm text-gray-600 mt-2">
+            <strong>Catégorie:</strong> {selectedPOI.category}
+          </p>
+          <p className="text-sm text-gray-600">
+            <strong>Coordonnées:</strong> (X: {Math.round(selectedPOI.x)}, Y: {Math.round(selectedPOI.y)})
+          </p>
+    
+          <div className="mt-4 flex space-x-2">
+            <button onClick={updatePOIName} className="px-3 py-1 bg-blue-500 text-white rounded">
+              Sauvegarder
+            </button>
+            <button onClick={deletePOI} className="px-3 py-1 bg-red-500 text-white rounded">
+              Supprimer
+            </button>
+            <button onClick={() => setSelectedPOI(null)} className="px-3 py-1 bg-gray-500 text-white rounded">
+              Annuler
+            </button>
+          </div>
+        </div>
+      );
+    };
+    
+    export const updatePOIProperties = (pois, selectedPOI, newPoiName, newPoiWidth, newPoiHeight) => {
+      return pois.map(obj =>
+        obj.id === selectedPOI.id 
+          ? { 
+              ...obj, 
+              name: newPoiName,
+              width: newPoiWidth || obj.width,
+              height: newPoiHeight || obj.height
+            } 
+          : obj
+      );
+    };
