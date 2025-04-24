@@ -5,10 +5,9 @@ const displayMeasurements = (ctx, startPoint, endPoint) => {
       Math.pow(endPoint.x - startPoint.x, 2) + 
       Math.pow(endPoint.y - startPoint.y, 2)
     );
-    const SCALE_FACTOR = 0.02; // Exemple : 1 pixel = 1 cm = 0.01 m
-    
-    // Conversion en mètres (ajustez le facteur selon votre échelle)
-    const meterDistance = (pixelDistance *SCALE_FACTOR).toFixed(2);
+
+    const meterToPixel = 100;
+    const meterDistance = (pixelDistance / meterToPixel).toFixed(2);
     
     // Position pour l'affichage (milieu du mur)
     const midX = (startPoint.x + endPoint.x) / 2;

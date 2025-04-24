@@ -1,0 +1,852 @@
+// src/utils/roomDetection.js
+import {junctionList,rayCasting,vertexList,segmentTree,areaRoom,arrayCompare,polygonIntoWalls,area} from "./helper"
+
+// Function to check if two line segments intersect
+function doLinesIntersect(line1, line2) {
+  const x1 = line1.start.x;
+  const y1 = line1.start.y;
+  const x2 = line1.end.x;
+  const y2 = line1.end.y;
+  
+  const x3 = line2.start.x;
+  const y3 = line2.start.y;
+  const x4 = line2.end.x;
+  const y4 = line2.end.y;
+
+  // Check if either of the lines is a point
+  if ((x1 === x2 && y1 === y2) || (x3 === x4 && y3 === y4)) {
+    return false;
+  }
+
+  // Lines are represented as a + bt = c + ds where t and s are parameters
+  const denominator = ((y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1));
+  
+  // Lines are parallel
+  if (denominator === 0) {
+    return false;
+  }
+  
+  const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator;
+  const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator;
+  
+  // Check if intersection occurs within both line segments
+  if (ua < 0 || ua > 1 || ub < 0 || ub > 1) {
+    return false;
+  }
+  
+  // Calculate intersection point
+  const x = x1 + ua * (x2 - x1);
+  const y = y1 + ua * (y2 - y1);
+  
+  // Use slightly larger tolerance for endpoint detection
+  const tolerance = 0.5; // Increased tolerance for better intersection detection
+  
+  const isEndpoint1 = 
+    (Math.abs(x - x1) < tolerance && Math.abs(y - y1) < tolerance) ||
+    (Math.abs(x - x2) < tolerance && Math.abs(y - y2) < tolerance);
+  const isEndpoint2 = 
+    (Math.abs(x - x3) < tolerance && Math.abs(y - y3) < tolerance) ||
+    (Math.abs(x - x4) < tolerance && Math.abs(y - y4) < tolerance);
+    
+  // If it's an endpoint of both lines, it's not a mid-segment intersection
+  if (isEndpoint1 && isEndpoint2) {
+    return false;
+  }
+  
+  return {
+    x: x,
+    y: y,
+    isEndpoint1: isEndpoint1,
+    isEndpoint2: isEndpoint2
+  };
+}
+
+// Function to check if two points are very close to each other
+function pointsAreClose(p1, p2, tolerance = 0.5) { // Increased default tolerance
+  return Math.abs(p1.x - p2.x) < tolerance && Math.abs(p1.y - p2.y) < tolerance;
+}
+
+// Function to create a deep copy of a wall
+function cloneWall(wall) {
+  return {
+    start: { ...wall.start },
+    end: { ...wall.end },
+    type: wall.type,
+    parent: wall.parent,
+    thick: wall.thick,
+    color: wall.color,
+    graph: wall.graph,
+    // Preserve any other properties the wall might have
+    ...Object.fromEntries(
+      Object.entries(wall).filter(([key]) => 
+        !['start', 'end', 'type', 'parent', 'thick', 'color', 'graph'].includes(key)
+      )
+    )
+  };
+}
+
+// Helper function to check if a point lies on a line segment
+function isPointOnLine(point, lineStart, lineEnd, tolerance = 0.5) {
+  // Calculate distances
+  const d1 = Math.sqrt(Math.pow(point.x - lineStart.x, 2) + Math.pow(point.y - lineStart.y, 2));
+  const d2 = Math.sqrt(Math.pow(point.x - lineEnd.x, 2) + Math.pow(point.y - lineEnd.y, 2));
+  const lineLength = Math.sqrt(Math.pow(lineEnd.x - lineStart.x, 2) + Math.pow(lineEnd.y - lineStart.y, 2));
+  
+  // Check if point is on line within tolerance
+  return Math.abs(d1 + d2 - lineLength) < tolerance;
+}
+
+// Helper: Normalize path for duplicate checking
+function normalizePath(path) {
+  return [...path].sort((a, b) => a - b).join('-');
+}
+
+// Helper: Check if polygon A is fully inside polygon B
+function isPolygonInside(polyA, polyB) {
+  return polyA.every(point => rayCasting(point, polyB));
+}
+
+// Helper function to calculate polygon area precisely
+function calculatePolygonArea(points) {
+  let total = 0;
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    total += points[i].x * points[j].y;
+    total -= points[j].x * points[i].y;
+  }
+  return Math.abs(total) / 2;
+}
+
+// Enhanced check if a polygon is clockwise or counterclockwise
+function isPolygonClockwise(points) {
+  // Use shoelace formula for more reliable orientation detection
+  let sum = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p1 = points[i];
+    const p2 = points[(i + 1) % points.length];
+    sum += (p2.x - p1.x) * (p2.y + p1.y);
+  }
+  return sum > 0;
+}
+
+// Enhanced preprocessing function
+function preprocessWalls(walls) {
+  // First, handle the case where a wall endpoint lies on another wall
+  let modifiedWalls = [...walls];
+  let changes = true;
+  
+  while (changes) {
+    changes = false;
+    const newWalls = [];
+    
+    // Check each wall against all others for "T-junctions"
+    for (let i = 0; i < modifiedWalls.length; i++) {
+      const wall = modifiedWalls[i];
+      let wallModified = false;
+      
+      // Check if any other wall's endpoint lies on this wall
+      for (let j = 0; j < modifiedWalls.length; j++) {
+        if (i === j) continue;
+        
+        const otherWall = modifiedWalls[j];
+        
+        // Check if start point of otherWall lies on wall
+        if (!pointsAreClose(otherWall.start, wall.start) && 
+            !pointsAreClose(otherWall.start, wall.end) && 
+            isPointOnLine(otherWall.start, wall.start, wall.end)) {
+          
+          console.log("Found T-junction: wall endpoint on another wall");
+          changes = true;
+          wallModified = true;
+          
+          // Split wall at this point
+          const newWall1 = cloneWall(wall);
+          newWall1.end = { ...otherWall.start };
+          
+          const newWall2 = cloneWall(wall);
+          newWall2.start = { ...otherWall.start };
+          
+          newWalls.push(newWall1, newWall2);
+          break;
+        }
+        
+        // Check if end point of otherWall lies on wall
+        if (!pointsAreClose(otherWall.end, wall.start) && 
+            !pointsAreClose(otherWall.end, wall.end) && 
+            isPointOnLine(otherWall.end, wall.start, wall.end)) {
+          
+          console.log("Found T-junction: wall endpoint on another wall");
+          changes = true;
+          wallModified = true;
+          
+          // Split wall at this point
+          const newWall1 = cloneWall(wall);
+          newWall1.end = { ...otherWall.end };
+          
+          const newWall2 = cloneWall(wall);
+          newWall2.start = { ...otherWall.end };
+          
+          newWalls.push(newWall1, newWall2);
+          break;
+        }
+      }
+      
+      if (!wallModified) {
+        newWalls.push(wall);
+      }
+    }
+    
+    modifiedWalls = newWalls;
+  }
+  
+  // Now continue with the regular preprocessing (intersections)
+  let processedWalls = modifiedWalls;
+  let wallsToProcess = [...processedWalls];
+  let newWalls = [];
+  let intersectionsFound = false;
+  
+  // Check each pair of walls for intersections
+  do {
+    intersectionsFound = false;
+    newWalls = [];
+    
+    // Check each pair of walls for intersections
+    for (let i = 0; i < wallsToProcess.length; i++) {
+      for (let j = i + 1; j < wallsToProcess.length; j++) {
+        const wall1 = wallsToProcess[i];
+        const wall2 = wallsToProcess[j];
+        
+        // Skip walls that share endpoints
+        if (pointsAreClose(wall1.start, wall2.start) || 
+            pointsAreClose(wall1.start, wall2.end) || 
+            pointsAreClose(wall1.end, wall2.start) || 
+            pointsAreClose(wall1.end, wall2.end)) {
+          continue;
+        }
+        
+        const intersection = doLinesIntersect({
+          start: wall1.start,
+          end: wall1.end
+        }, {
+          start: wall2.start,
+          end: wall2.end
+        });
+        
+        if (intersection) {
+          intersectionsFound = true;
+          const intersectionPoint = { x: intersection.x, y: intersection.y };
+          
+          // If it's not an endpoint of wall1, split wall1
+          if (!intersection.isEndpoint1) {
+            const newWall1a = cloneWall(wall1);
+            newWall1a.end = { ...intersectionPoint };
+            
+            const newWall1b = cloneWall(wall1);
+            newWall1b.start = { ...intersectionPoint };
+            
+            // Add the split walls instead of the original
+            newWalls.push(newWall1a);
+            newWalls.push(newWall1b);
+          } else {
+            newWalls.push(wall1);
+          }
+          
+          if (!intersection.isEndpoint2) {
+            const newWall2a = cloneWall(wall2);
+            newWall2a.end = { ...intersectionPoint };
+            const newWall2b = cloneWall(wall2);
+            newWall2b.start = { ...intersectionPoint };
+            newWalls.push(newWall2a);
+            newWalls.push(newWall2b);
+          } else {
+            newWalls.push(wall2);
+          }
+          
+          // Remove the processed walls from consideration
+          wallsToProcess.splice(j, 1);
+          wallsToProcess.splice(i, 1);
+          i--;
+          break;
+        }
+      }
+      
+      // If we didn't find any intersection for this wall, keep it
+      if (!intersectionsFound && i < wallsToProcess.length) {
+        newWalls.push(wallsToProcess[i]);
+      }
+    }
+    
+    // Update the walls to process for the next iteration
+    wallsToProcess = [...newWalls];
+    
+  } while (intersectionsFound);
+  
+  // Remove any duplicate walls
+  const uniqueWalls = [];
+  for (const wall of newWalls) {
+    let isDuplicate = false;
+    for (const uniqueWall of uniqueWalls) {
+      if ((pointsAreClose(wall.start, uniqueWall.start) && pointsAreClose(wall.end, uniqueWall.end)) ||
+          (pointsAreClose(wall.start, uniqueWall.end) && pointsAreClose(wall.end, uniqueWall.start))) {
+        isDuplicate = true;
+        break;
+      }
+    }
+    if (!isDuplicate) uniqueWalls.push(wall);
+  }
+  
+  return uniqueWalls;
+}
+
+export function polygonize(WALLS) {
+  console.log("polygonize called with", WALLS.length, "walls");
+  
+  // Create deep copies of walls to avoid modifying originals
+  const wallsCopy = WALLS.map(cloneWall);
+  const hasPartitions = WALLS.some(w => w.type === 'partition');
+  const partitionCount = wallsCopy.filter(w => w.type === 'partition').length;
+  console.log("Partition wall count:", partitionCount);
+
+  // Preprocess walls to handle intersections
+  const processedWalls = preprocessWalls(wallsCopy);
+  console.log("Processed walls:", processedWalls.length);
+
+  // Generate graph structure
+  const junction = junctionList(processedWalls);
+  const vertex = vertexList(junction, processedWalls);
+  const vertexCopy = JSON.parse(JSON.stringify(vertex));
+  
+  console.log("Vertices:", vertex.length);
+  
+  // Build a wall map for edge lookup - FIXED
+  const wallMap = new Map();
+  for (const wall of processedWalls) {
+    for (let i = 0; i < vertex.length; i++) {
+      for (let j = 0; j < vertex.length; j++) {
+        if (i === j) continue;
+        
+        const v1 = { x: vertex[i].x, y: vertex[i].y };
+        const v2 = { x: vertex[j].x, y: vertex[j].y };
+        
+        if ((pointsAreClose(wall.start, v1, 1.0) && pointsAreClose(wall.end, v2, 1.0)) ||
+            (pointsAreClose(wall.start, v2, 1.0) && pointsAreClose(wall.end, v1, 1.0))) {
+          const key = `${Math.min(i, j)}-${Math.max(i, j)}`;
+          wallMap.set(key, wall);
+          
+          // Debug for partition walls
+          if (wall.type === 'partition') {
+            console.log(`Found partition wall connecting vertices ${i} and ${j}`);
+          }
+        }
+      }
+    }
+  }
+  
+  console.log("Wall map size:", wallMap.size, "with", 
+    Array.from(wallMap.values()).filter(w => w.type === 'partition').length, "partition walls");
+  
+  // Direct mapping from vertices to connected walls for more robust partition detection
+  const vertexToWalls = new Map();
+  processedWalls.forEach((wall, wallIdx) => {
+    for (let i = 0; i < vertex.length; i++) {
+      const v = { x: vertex[i].x, y: vertex[i].y };
+      
+      if (pointsAreClose(wall.start, v, 1.0)) {
+        if (!vertexToWalls.has(i)) vertexToWalls.set(i, []);
+        vertexToWalls.get(i).push({ wall, isStart: true, index: wallIdx });
+      }
+      
+      if (pointsAreClose(wall.end, v, 1.0)) {
+        if (!vertexToWalls.has(i)) vertexToWalls.set(i, []);
+        vertexToWalls.get(i).push({ wall, isStart: false, index: wallIdx });
+      }
+    }
+  });
+  
+  // Find all vertices connected to partition walls
+  const partitionVertices = new Set();
+  const allVertices = Array.from({ length: vertex.length }, (_, i) => i);
+  
+  // First method: Using vertex connections
+  for (let i = 0; i < vertex.length; i++) {
+    const v1 = vertex[i];
+    
+    for (const child of v1.child) {
+      const j = child.id;
+      const edgeKey = `${Math.min(i, j)}-${Math.max(i, j)}`;
+      const wall = wallMap.get(edgeKey);
+      
+      if (wall && wall.type === 'partition') {
+        partitionVertices.add(i);
+        partitionVertices.add(j);
+      }
+    }
+  }
+  
+  // Second method: Using direct vertex to walls mapping (more reliable)
+  vertexToWalls.forEach((walls, vertexIdx) => {
+    for (const { wall } of walls) {
+      if (wall.type === 'partition') {
+        partitionVertices.add(vertexIdx);
+      }
+    }
+  });
+  
+  console.log("Partition vertices:", [...partitionVertices]);
+  
+  // If we still have no partition vertices but have partition walls, try a more direct approach
+  if (partitionVertices.size === 0 && partitionCount > 0) {
+    console.log("No partition vertices found despite having partition walls. Trying direct approach...");
+    
+    // Directly create connections based on the walls themselves
+    for (let i = 0; i < processedWalls.length; i++) {
+      const wall = processedWalls[i];
+      
+      if (wall.type === 'partition') {
+        // Find vertices for this partition wall
+        for (let j = 0; j < vertex.length; j++) {
+          const v = { x: vertex[j].x, y: vertex[j].y };
+          
+          if (pointsAreClose(wall.start, v, 1.0) || pointsAreClose(wall.end, v, 1.0)) {
+            partitionVertices.add(j);
+            console.log(`Added vertex ${j} to partition vertices (direct approach)`);
+          }
+        }
+      }
+    }
+    
+    console.log("Partition vertices after direct approach:", [...partitionVertices]);
+  }
+  
+  // --- ROOM DETECTION ---
+  // If we still have no partition vertices, we won't be able to detect rooms with partitions
+  // So use all vertices as starting points in that case
+  const startingVertices = partitionVertices.size > 0 ? 
+    [...partitionVertices] : allVertices;
+    
+  const roomCycles = [];
+  const allCycles = [];
+  const processedPaths = new Set();
+  
+  // Find rooms
+  if (hasPartitions) {
+    // Consider vertex starting points
+    for (const startIdx of startingVertices) {
+      if (vertex[startIdx].child.length < 2) continue;
+      
+      const WAYS = segmentTree(startIdx, vertex);
+      
+      for (const way of WAYS) {
+        const path = way.split('-').map(Number);
+        if (path.length < 3) continue;
+        
+        // Skip very small areas
+        const areaValue = areaRoom(vertex, path);
+        if (areaValue < 50) continue;
+        
+        // Normalize path for duplicate detection
+        const pathKey = normalizePath(path);
+        if (processedPaths.has(pathKey)) continue;
+        processedPaths.add(pathKey);
+        
+        // Get coordinates for this cycle
+        const coords = path.map(idx => ({x: vertex[idx].x, y: vertex[idx].y}));
+        
+        // Check if this cycle uses any partition walls
+        let partitionEdgeCount = 0;
+        let regularEdgeCount = 0;
+        const edgeKeys = new Set(); // Track edges used
+        
+        for (let i = 0; i < path.length; i++) {
+          const currIdx = parseInt(path[i]);
+          const nextIdx = parseInt(path[(i + 1) % path.length]);
+          
+          if (isNaN(currIdx) || isNaN(nextIdx)) continue;
+          
+          const edgeKey = `${Math.min(currIdx, nextIdx)}-${Math.max(currIdx, nextIdx)}`;
+          edgeKeys.add(edgeKey);
+          
+          const wall = wallMap.get(edgeKey);
+          
+          if (wall) {
+            if (wall.type === 'partition') {
+              partitionEdgeCount++;
+            } else {
+              regularEdgeCount++;
+            }
+          }
+        }
+        
+        // A valid room must use at least one partition wall
+        if (partitionEdgeCount === 0) {
+          continue;
+        }
+        
+        // Calculate precise area and store cycle info
+        const preciseArea = calculatePolygonArea(coords);
+        
+        // For simple rooms, enforce a minimum number of edges
+        // A typical room would have at least 4 edges (rectangular)
+        if (path.length < 4) {
+          console.log(`Skipping cycle with only ${path.length} edges`);
+          continue;
+        }
+        
+        // A good room candidate will have a reasonable number of walls
+        // We want to avoid very complex cycles that are likely artifacts
+        const edgeToAreaRatio = edgeKeys.size / Math.sqrt(preciseArea);
+        if (edgeToAreaRatio > 0.5) {
+          console.log(`Skipping cycle with high edge-to-area ratio: ${edgeToAreaRatio.toFixed(2)}`);
+          continue;
+        }
+        
+        roomCycles.push({
+          path,
+          coords,
+          area: preciseArea,
+          partitionCount: partitionEdgeCount,
+          regularCount: regularEdgeCount,
+          edgeKeys: Array.from(edgeKeys),
+          type: "room"
+        });
+        
+        // For debugging
+        console.log(`Found room cycle with ${partitionEdgeCount} partition walls and ${regularEdgeCount} regular walls, area=${preciseArea}`);
+        
+        // Add to all cycles for hallway detection later
+        allCycles.push({
+          path,
+          coords,
+          area: preciseArea,
+          partitionCount: partitionEdgeCount,
+          regularCount: regularEdgeCount,
+          edgeKeys: Array.from(edgeKeys)
+        });
+      }
+    }
+    
+    console.log(`Found ${roomCycles.length} potential cycles with partition walls`);
+  }
+  
+  // --- FINAL CYCLE SELECTION ---
+  // 1. Apply additional filtering to room cycles to remove duplicates and near-duplicates
+  const uniqueRooms = [];
+  
+  // Sort rooms by area for consistent processing
+  roomCycles.sort((a, b) => b.area - a.area);
+  
+  for (const room of roomCycles) {
+    // Skip very small rooms (likely artifacts)
+    if (room.area < 100) continue;
+    
+    let isDuplicate = false;
+    const roomCenter = {
+      x: room.coords.reduce((sum, p) => sum + p.x, 0) / room.coords.length,
+      y: room.coords.reduce((sum, p) => sum + p.y, 0) / room.coords.length
+    };
+    
+    // Check if this room is too similar to any already accepted room
+    for (const existingRoom of uniqueRooms) {
+      const existingCenter = {
+        x: existingRoom.coords.reduce((sum, p) => sum + p.x, 0) / existingRoom.coords.length,
+        y: existingRoom.coords.reduce((sum, p) => sum + p.y, 0) / existingRoom.coords.length
+      };
+      
+      // Calculate distance between centers
+      const distance = Math.sqrt(
+        Math.pow(roomCenter.x - existingCenter.x, 2) +
+        Math.pow(roomCenter.y - existingCenter.y, 2)
+      );
+      
+      // If centers are close or areas are similar, consider it a duplicate
+      if (distance < 20 || 
+          Math.abs(room.area - existingRoom.area) / Math.max(room.area, existingRoom.area) < 0.2) {
+        isDuplicate = true;
+        break;
+      }
+      
+      // Count shared edges
+      const sharedEdges = room.edgeKeys.filter(edge => existingRoom.edgeKeys.includes(edge)).length;
+      const sharedRatio = sharedEdges / Math.min(room.edgeKeys.length, existingRoom.edgeKeys.length);
+      
+      // If more than 70% edges are shared, likely a duplicate
+      if (sharedRatio > 0.7) {
+        console.log(`Filtering out duplicate room (${sharedRatio.toFixed(2)} edge similarity)`);
+        isDuplicate = true;
+        break;
+      }
+    }
+    
+    if (!isDuplicate) {
+      uniqueRooms.push(room);
+    }
+  }
+  
+  console.log(`After duplicate filtering: ${uniqueRooms.length} unique rooms`);
+  
+  // 2. Filter out rooms contained within other rooms (keep the original algorithm)
+  const validRooms = [];
+  if (hasPartitions && uniqueRooms.length > 0) {
+    // Filter out rooms contained within other rooms
+    for (let i = 0; i < uniqueRooms.length; i++) {
+      let isContained = false;
+      for (let j = 0; j < uniqueRooms.length; j++) {
+        if (i === j) continue;
+        
+        // Check if cycle i is inside cycle j
+        if (isPolygonInside(uniqueRooms[i].coords, uniqueRooms[j].coords) && 
+            Math.abs(uniqueRooms[i].area - uniqueRooms[j].area) > 5) {
+          isContained = true;
+          break;
+        }
+      }
+      
+      if (!isContained) {
+        validRooms.push(uniqueRooms[i]);
+      }
+    }
+    
+    console.log(`Found ${validRooms.length} valid rooms after containment check`);
+  }
+  
+  // If we still have too many rooms, take only the most significant one
+  if (validRooms.length > 1) {
+    console.log("Multiple rooms detected, selecting the most likely room");
+    
+    // Score each room by its characteristics
+    validRooms.forEach(room => {
+      // Ideal room characteristics:
+      // 1. Has a reasonable number of partition walls (not too few or too many)
+      // 2. Has a reasonable area (not too small or too large)
+      // 3. Has a reasonable shape (compact)
+      
+      let score = 0;
+      
+      // Rooms with a more balanced mix of partition and regular walls are preferred
+      const partitionRatio = room.partitionCount / (room.partitionCount + room.regularCount);
+      if (partitionRatio >= 0.3 && partitionRatio <= 0.7) {
+        score += 10;
+      }
+      
+      // More compact shapes (closer to square/rectangle) are preferred
+      const perimeter = room.path.length;
+      const shapeRatio = (4 * Math.PI * room.area) / (perimeter * perimeter);
+      if (shapeRatio > 0.6) {
+        score += 5;
+      }
+      
+      // Mid-sized rooms are preferred
+      if (room.area > 1000 && room.area < 10000) {
+        score += 3;
+      }
+      
+      room.score = score;
+    });
+    
+    // Sort by score (highest first) and take only the top room
+    validRooms.sort((a, b) => b.score - a.score);
+    const selectedRooms = [validRooms[0]];
+    console.log(`Selected room with score ${validRooms[0].score} (area=${validRooms[0].area})`);
+    
+    // Replace validRooms with selectedRooms
+    validRooms.length = 0;
+    validRooms.push(...selectedRooms);
+  }
+  
+  // --- HALLWAY DETECTION ---
+  // Reset processed paths for hallway detection
+  const hallwayProcessedPaths = new Set([...processedPaths]);
+  const hallwayCycles = [];
+  
+  // Find all possible cycles to identify the hallway
+  for (const startIdx of allVertices) {
+    if (vertex[startIdx].child.length < 2) continue;
+    
+    const WAYS = segmentTree(startIdx, vertex);
+    
+    for (const way of WAYS) {
+      const path = way.split('-').map(Number);
+      if (path.length < 3) continue;
+      
+      // Skip very small areas
+      const areaValue = areaRoom(vertex, path);
+      if (areaValue < 50) continue;
+      
+      // Normalize path for duplicate detection
+      const pathKey = normalizePath(path);
+      if (hallwayProcessedPaths.has(pathKey)) continue;
+      hallwayProcessedPaths.add(pathKey);
+      
+      // Get coordinates for this cycle
+      const coords = path.map(idx => ({x: vertex[idx].x, y: vertex[idx].y}));
+      
+      // Count wall types
+      let partitionEdgeCount = 0;
+      let regularEdgeCount = 0;
+      
+      for (let i = 0; i < path.length; i++) {
+        const currIdx = parseInt(path[i]);
+        const nextIdx = parseInt(path[(i + 1) % path.length]);
+        
+        if (isNaN(currIdx) || isNaN(nextIdx)) continue;
+        
+        const edgeKey = `${Math.min(currIdx, nextIdx)}-${Math.max(currIdx, nextIdx)}`;
+        const wall = wallMap.get(edgeKey);
+        
+        if (wall) {
+          if (wall.type === 'partition') {
+            partitionEdgeCount++;
+          } else {
+            regularEdgeCount++;
+          }
+        }
+      }
+      
+      // Calculate precise area
+      const preciseArea = calculatePolygonArea(coords);
+      
+      // Add this as a potential hallway
+      hallwayCycles.push({
+        path,
+        coords,
+        area: preciseArea,
+        partitionCount: partitionEdgeCount,
+        regularCount: regularEdgeCount
+      });
+      
+      // Add to all cycles list
+      if (!hasPartitions) {
+        allCycles.push({
+          path,
+          coords,
+          area: preciseArea,
+          partitionCount: partitionEdgeCount,
+          regularCount: regularEdgeCount
+        });
+      }
+    }
+  }
+  
+  console.log(`Found ${hallwayCycles.length} potential hallway cycles`);
+  
+  // --- FINAL CYCLE SELECTION ---
+  // 1. Filter rooms (if any)
+  const finalPolygons = [];
+  
+  // Add rooms
+  for (const room of validRooms) {
+    const realCoords = polygonIntoWalls(vertex, room.path, processedWalls);
+    finalPolygons.push({
+      way: room.path,
+      coords: room.coords,
+      coordsOutside: realCoords.outside,
+      coordsInside: realCoords.inside,
+      area: area(realCoords.inside),
+      outsideArea: area(realCoords.outside),
+      realArea: parseInt(room.area),
+      hasPartition: room.partitionCount > 0,
+      type: "room"
+    });
+  }
+  
+  // Add hallway if found
+  let hallway = null;
+  
+  // Sort hallway candidates by area (largest first)
+  hallwayCycles.sort((a, b) => b.area - a.area);
+  
+  if (hasPartitions && validRooms.length > 0) {
+    // Find a hallway that contains at least one room
+    for (const candidate of hallwayCycles) {
+      let containsAllRooms = true;
+      
+      for (const room of validRooms) {
+        const roomCenter = {
+          x: room.coords.reduce((sum, p) => sum + p.x, 0) / room.coords.length,
+          y: room.coords.reduce((sum, p) => sum + p.y, 0) / room.coords.length
+        };
+        
+        if (!rayCasting(roomCenter, candidate.coords)) {
+          containsAllRooms = false;
+          break;
+        }
+      }
+      
+      if (containsAllRooms && candidate.area > validRooms[0].area * 1.2) {
+        hallway = candidate;
+        break;
+      }
+    }
+  }
+  
+  // If no hallway found or no partitions, use the largest cycle as hallway
+  if (!hallway && hallwayCycles.length > 0) {
+    hallway = hallwayCycles[0];
+  }
+  
+  if (hallway) {
+    const realCoords = polygonIntoWalls(vertex, hallway.path, processedWalls);
+    finalPolygons.push({
+      way: hallway.path,
+      coords: hallway.coords,
+      coordsOutside: realCoords.outside,
+      coordsInside: realCoords.inside,
+      area: area(realCoords.inside),
+      outsideArea: area(realCoords.outside),
+      realArea: parseInt(hallway.area),
+      hasPartition: hallway.partitionCount > 0,
+      type: "hallway"
+    });
+  }
+  
+  console.log(`Final polygons: ${finalPolygons.length} (${validRooms.length} rooms, ${hallway ? 1 : 0} hallways)`);
+  return { polygons: finalPolygons, vertex: vertexCopy };
+}
+
+export function angleDeg(cx, cy, ex, ey) {
+  var dy = ey - cy;
+  var dx = ex - cx;
+  var theta = Math.atan2(dy, dx); // range (-PI, PI]
+  theta *= 180 / Math.PI; // rads to degs, range (-180, 180]
+  if (theta < 0) theta = 360 + theta; // range [0, 360)
+  return theta;
+}
+
+export function vectorXY(obj1, obj2) {
+  return ({
+    x:  obj2.x - obj1.x,
+    y:  obj2.y - obj1.y
+  });
+}
+
+export function vectorDeter(v1, v2) {
+  return (v1.x * v2.y)-(v1.y * v2.x);
+}
+
+export function middle(xo, yo, xd, yd) {
+  var x1 = parseInt(xo);
+  var y1 = parseInt(yo);
+  var x2 = parseInt(xd);
+  var y2 = parseInt(yd);
+  var middleX = Math.abs(x1 + x2) / 2;
+  var middleY = Math.abs(y1 + y2) / 2;
+  return ({
+      x: middleX,
+      y: middleY
+  });
+}
+export function createSVGElement(parent, tagName, attrs = {}) {
+  const elem = document.createElementNS("http://www.w3.org/2000/svg", tagName);
+  for (const [key, val] of Object.entries(attrs)) {
+    if (val !== undefined) {
+      elem.setAttribute(key, val);
+    }
+  }
+
+  if (parent && parent !== 'none') {
+    const container = typeof parent === 'string' ? document.getElementById(parent) : parent;
+    if (container) container.appendChild(elem);
+  }
+
+  return elem;
+}
