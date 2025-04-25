@@ -5,14 +5,13 @@ import { almostEqual, nearVertex } from '../lib/helper';
 import { calculateSnapPoint, findRoomAtPoint, getRoomCenter, isPointsEqual } from '../lib/utils';
 import Obj2D from '../lib/editor';
 import { displayMeasurements } from '../Draw';
-export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
+export const useFloorPlanZones=(canvasRef,tool,onChangeTool)=>{
   const [walls,setWalls]=useState([])
   const [modeOption,setModeOption]=useState("")
   const [placedObjects,setPlacedObjects]=useState([])
   const [isPreview,setIsPreview]=useState(true)
   const [roomProps,setRoomPropsPanel]=useState({})
   const binderRef = useRef(null)
-  const [startMoving,setStartMoving]=useState(false)
   const [binderVersion, setBinderVersion] = useState(1);
   const [action,setAction]=useState(0)
   const [dragState,setDragState]=useState(null)
@@ -26,6 +25,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
   const [connectedWalls, setConnectedWalls] = useState([]);
   const [selectedRoom,setSelectedRoom]=useState(null)
   const [rooms,setRooms]= useState({polygons:[]});
+  const [selectedWallId,setSelectedWallId]=useState(null)
   const [wallLengthPopup, setWallLengthPopup] = useState({
     visible: false,
     x: 0,
@@ -47,7 +47,6 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
     '#e0f2e0'  // Mint Green
   ];
 
-  // Function to assign different colors to adjacent rooms
   const assignRoomColors = (polygons) => {
     if (!polygons || polygons.length === 0) return {};
     
@@ -91,8 +90,6 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
       }
     }
     
-
-    // Assign colors using graph coloring algorithm
     for (let i = 0; i < polygons.length; i++) {
       // Get colors used by adjacent rooms
       const usedColors = adjacentRooms[i].map(adj => colorAssignments[adj]).filter(Boolean);
@@ -113,6 +110,47 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
     
     return colorAssignments;
   };
+
+  // Add this function to handle wall deletion
+const deleteWall = (wallId) => {
+  if (wallId === null) return;
+  
+  // Remove wall objects (doors, windows) attached to this wall
+  const updatedObjects = placedObjects.filter(obj => obj.wallId !== wallId);
+  
+  // Remove the wall
+  const updatedWalls = walls.filter((_, index) => index !== wallId);
+  
+  // Update walls array with new indices
+  const reindexedWalls = updatedWalls.map((wall, idx) => ({
+    ...wall,
+    wallId: idx
+  }));
+  
+  // Update object references to walls
+  const updatedObjectsWithCorrectIds = updatedObjects.map(obj => {
+    // If the object's wall index was higher than the deleted wall,
+    // decrement its wallId by 1
+    if (obj.wallId > wallId) {
+      return {
+        ...obj,
+        wallId: obj.wallId - 1
+      };
+    }
+    return obj;
+  });
+  
+  setWalls(reindexedWalls);
+  setPlacedObjects(updatedObjectsWithCorrectIds);
+  
+  // Clear selection state
+  setSelectedWallId(null);
+  
+  // Recalculate rooms
+  const updatedRooms = polygonize(reindexedWalls);
+  setRooms(updatedRooms);
+  setWallLengthPopup(prev => ({...prev,visible:false}))
+};
 
   useEffect(() => {
     if (walls.length > 0 && selectedRoom === null) {
@@ -224,7 +262,8 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
       });
     };
     const drawWalls = (ctx) => {
-      walls.forEach(wall=>{
+      walls.forEach((wall,index)=>{
+        const isSelected = selectedWallId === index;
         const wallPolygon = calculateWallPolygon(wall.start, wall.end, wall.thickness);
       
         ctx.beginPath();
@@ -233,12 +272,18 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
           ctx.lineTo(wallPolygon[i].x, wallPolygon[i].y);
         }
         ctx.closePath();
-        
-        ctx.strokeStyle = '#333';
-        ctx.lineWidth = wall.thickness;
-        ctx.fill();
-        ctx.stroke();
-  
+        // Use a different color or style for selected walls
+    if (isSelected) {
+      ctx.fillStyle = 'rgba(66, 133, 244, 0.4)';
+      ctx.strokeStyle = '#4285F4';
+      ctx.lineWidth = wall.thickness + 2;
+    } else {
+      ctx.fillStyle = '#FFF';
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = wall.thickness;
+    }
+    ctx.fill();
+    ctx.stroke();
         displayMeasurements(ctx, { x: wall.start.x, y: wall.start.y }, { x: wall.end.x, y: wall.end.y });
       })
       
@@ -585,6 +630,8 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
           const {wall,wallId}=wallInfo
         if (wall) {
           if(selectedRoom!=null) setSelectedRoom(null)
+            // Set the selected wall ID
+          setSelectedWallId(wallId);
         const connectedWalls= findConnectedWalls(walls,wallId);
       const wallIds = connectedWalls?.map(wall=>wall.wallId )
         setDragState({
@@ -620,9 +667,8 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
     });
     
     return;
-
-        return 
       }else{
+        setSelectedWallId(null);
         if(rooms.polygons){   
         const roomId = findRoomAtPoint(rooms,point);
           if (roomId !== null) {
@@ -789,7 +835,6 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
 
     const handleMouseUp = (event) => {
     if(tool=="select"){
-      
       if (isDraggingVertex) {
         setIsDraggingVertex(false);
         const updatedRooms = polygonize(walls);
@@ -798,8 +843,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
         setHoverVertex(null)
         setConnectedWalls([]);
       }
-      
-      if (!dragState) return;
+       if (!dragState) return;
        if (dragState.type === 'wall') {
        // setWallLengthPopup({...wallLengthPopup,visible:false})
       updateRoomsForWalls(walls);
@@ -857,5 +901,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
   setWallLengthPopup,
   cancelWallLengthPopup,
   applyWallLength,
+  selectedWallId,
+  deleteWall
   };
 }

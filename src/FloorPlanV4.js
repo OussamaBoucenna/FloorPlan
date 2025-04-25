@@ -1,20 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { movePOI, stopDraggingPOI, zoomPOI , findClickedPOI, getCanvasClickPosition ,handPoi ,drawPOIs,handlePOI,handleObjectDrag } from './pois';
+import { movePOI, stopDraggingPOI, zoomPOI , findClickedPOI ,handPoi ,drawPOIs,handlePOI,handleObjectDrag } from './pois';
 import {updateCanvasSize} from './canvasUtils'
 import GeoJsonManipulation  from './GeoJsonManipulation';
-import { getMousePos, calculateDoorPosition,calculatePolygonArea, findItemAt} from './Utils';
-import {displayMeasurements , drawGrid} from './Draw';
+import { getMousePos, calculateDoorPosition,calculatePolygonArea} from './Utils';
+import { drawGrid} from './Draw';
 import {WallLengthPopup} from "./components/WallLengthPop"
-//import {drawWalls} from './handlers/handleWalls'
-import {drawDoors ,handleDoor } from './handlers/handleDoors'
-import {drawWindows } from './handlers/handleWindows'
-import {drawRooms ,handleRoomDrawing,drawCurrentRoom} from './handlers/handleRooms'
+import {ConfirmationDialog} from "./components/confirmationDialog"
+import {handleDoor} from './handlers/handleDoors'
+import {ZonePropertiesPanel} from "./components/ZonePropertiesPanel"
+import {handleRoomDrawing,drawCurrentRoom} from './handlers/handleRooms'
 import {handlePan} from './handlers/handlePan';
 import {handlePath ,drawPath} from './handlers/handlNavigation';
 import {handleSelect} from './handlers/handleSelect';
-import {handleErase,handleDrawingStart,handleDrawingEnd,isNearPoint } from './handlers/handleErase';
-import { drawZones, handleZoneDrawing } from './handlers/handkeZones';
+import {handleErase,handleDrawingEnd,isNearPoint } from './handlers/handleErase';
 import {useFloorPlanZones} from "./hooks/useZonesEditor"
+import { useZones } from './hooks/useZones';
+import  {DeleteWallButton} from "./components/deleteWallBtn"
 const FloorPlanV4 = () => {
 
   // Icons for different categories
@@ -25,16 +26,7 @@ const FloorPlanV4 = () => {
     default: "./logo.svg",
   };
 
-  // zones states variables 
-  // start 
-  const [zones, setZones] = useState([]);
-  const [currentZone, setCurrentZone] = useState(null);
-  const [zoneShapeType, setZoneShapeType] = useState("rectangle"); // rectangle, circle, polygon
-  const [zoneType, setZoneType] = useState("circulation"); //zone de circulation,zone de travail,zone de danger,zone de service..
-  const [currentPolygonPoints, setCurrentPolygonPoints] = useState([]);
-  const [showZoneForm, setShowZoneForm] = useState(false);
-  const [newZoneName, setNewZoneName] = useState("");
-  // end
+
   
   const [showPoiForm, setShowPoiForm] = useState(false);
   const [poiName, setPoiName] = useState('');
@@ -44,11 +36,8 @@ const FloorPlanV4 = () => {
   const [selectedPOI, setSelectedPOI] = useState(null);
   const [newPoiName, setNewPoiName] = useState(""); // Pour stocker le nouveau nom
   const [tool, setTool] = useState('wall');
-  //const [walls, setWalls] = useState([]);
-  //const [rooms, setRooms] = useState([]);
   const [pois, setPois] = useState([]);
   const [doors, setDoors] = useState([]);
-  const [isDrawing, setIsDrawing] = useState(false);
   const [currentWall, setCurrentWall] = useState(null);
   const [currentRoom, setCurrentRoom] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -77,11 +66,14 @@ const FloorPlanV4 = () => {
   const onChangeTool=(tool)=>{
     setTool(tool)
   }
+
+  // import useZoneEditor Hook
   const {
     drawRooms,
     drawWalls,
     handleSelectDoorType,
     drawWallPreview,
+    setCurrentPoint,
     setWalls,
     handleMouseDown : mouseDown,
     handleMouseMove:mouseMove,
@@ -93,12 +85,14 @@ const FloorPlanV4 = () => {
     selectedVertex,
     wallThickness,
     wallLengthPopup,
-    setWallLengthPopup,
+    selectedWallId,
+    deleteWall,
     applyWallLength,
     mode,
     placedObjects,
     action,
     hoverVertex,
+    getCanvasPoint,
     selectedRoom,
     binderRef,
     binderVersion,
@@ -106,7 +100,81 @@ const FloorPlanV4 = () => {
     walls,
     rooms,
     isPreview,
-  }= useFloorPlanZones(null,canvasRef,tool,onChangeTool)
+  }= useFloorPlanZones(canvasRef,tool,onChangeTool)
+
+  const {
+    zones,
+    zoneDrawingMode,
+    startRectangleDrawing,
+    startCircleDrawing,
+    startPolygonDrawing,
+    drawAllZones,
+    openCoordinateForm,
+    drawZonePreview,
+    selectedZone,
+    isDrawing,
+    zoneToDelete,
+    cancelZoneDeletion,
+    setIsDrawing,
+    currentZonePoints,
+    setCurrentZonePoints,
+    deleteZone,
+    initiateZoneDelete,
+    showDeleteConfirmation,
+    predefinedZoneTypes,
+    addCustomZoneType,
+    updateZoneProperties,
+    handlePolygonClick,
+    showZoneProperties,
+    setShowZoneProperties,
+    handleZoneMouseDown,
+    finishPolygonZone,
+    handleZoneMouseMove,
+    handleZoneMouseUp,
+    finishRectangleZone,
+    finishCircleZone,
+    setDrawingZoneMode,
+    updateCoordinates,
+    coordinatesInMeters
+  } = useZones(tool);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && zoneDrawingMode === 'polygon') {
+        setDrawingZoneMode(null);
+        setCurrentZonePoints([]);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [zoneDrawingMode, setDrawingZoneMode, setCurrentZonePoints]);
+
+  const handleDoubleClick = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left - offset.x) / scale;
+    const y = (e.clientY - rect.top - offset.y) / scale;
+    
+    handleZoneMouseDown(x, y, true);
+  };
+
+  const handleZoneToolClick = (zoneTool) => {
+    setTool(null);
+    if (zoneTool === 'rectangle') {
+      startRectangleDrawing();
+    } else if (zoneTool === 'circle') {
+      startCircleDrawing();
+    } else if (zoneTool === 'polygon') {
+      startPolygonDrawing();
+    } else if (zoneTool === 'coordinates') {
+      openCoordinateForm();
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => updateCanvasSize(canvasContainerRef, setCanvasSize);
@@ -127,8 +195,6 @@ const FloorPlanV4 = () => {
     drawCanvas()
   },[])
 
-
-
   // drawCanvas function 
   const drawCanvas = /*useCallback(*/() => {
     if (!ctxRef.current) return;
@@ -138,7 +204,7 @@ const FloorPlanV4 = () => {
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-     drawRooms(ctx);
+    drawRooms(ctx);
     drawWalls(ctx);
       if(placedObjects && placedObjects.length){
         placedObjects.forEach(object => {
@@ -146,14 +212,17 @@ const FloorPlanV4 = () => {
         })
       }
 
-    // Draw wall preview when in drawing mode
+      if (typeof drawAllZones === 'function') {
+        drawAllZones(ctx);
+      }
+      //console.log("dkhalllllllll",zoneDrawingMode,currentZonePoints,currentPoint)
+      if (zoneDrawingMode && currentZonePoints.length && currentPoint) {
+        drawZonePreview(ctx, currentZonePoints[0], currentPoint);
+      }
     if ((tool === 'wall' || tool === 'partition') && action === 1 && startPoint && currentPoint) {
       drawWallPreview(ctx, startPoint, currentPoint, 
         mode === 'wall' ? wallThickness : 10);
     }
-    
-    //console.log("HHHHHHHHHHHHHHHHHHHHHHH",nearNodePoint,tool)
-    // Draw green circle indicator when near a wall node
     if (nearNodePoint && tool != "select") {
       const point = nearNodePoint.point
       ctx.beginPath();
@@ -220,9 +289,9 @@ const FloorPlanV4 = () => {
     drawCurrentRoom(ctx, currentRoom, isDrawing);
     
     // draw zones 
-    drawZones(ctx,scale,zones,isDrawing,selectedItem,currentZone,currentPolygonPoints,zoneShapeType)
+    //drawZones(ctx,scale,zones,isDrawing,selectedItem,currentZone,currentPolygonPoints,zoneShapeType)
     ctx.restore();
-  }, [walls, rooms, pois, doors,zones, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, tool,action,startPoint,currentPoint,nearNodePoint,binderRef,binderVersion,isPreview,placedObjects]);
+  }, [walls, rooms,currentZonePoints,zoneDrawingMode, pois, doors,zones, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, tool,action,startPoint,currentPoint,nearNodePoint,binderRef,binderVersion,isPreview,placedObjects]);
   
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -237,10 +306,7 @@ const FloorPlanV4 = () => {
           setPois(pois.filter((o) => o.id !== selectedItem.id));
         } else if (selectedItem.type === "door") {
           setDoors(doors.filter((d) => d.id !== selectedItem.id));
-        }else */if (selectedItem && selectedItem.type === "zone") {
-          setZones(zones.filter((z) => z.id !== selectedItem.id));
-         // console.log("Zone supprimée :", selectedItem.id);
-        }
+        }*/
         setSelectedItem(null);
       }
     };
@@ -250,11 +316,20 @@ const FloorPlanV4 = () => {
  
 
   const handleMouseDown = (e) => {
-   // console.log("called ",tool)
-    const canvas = canvasRef.current;
-    const mousePos = getMousePos(canvas, e, offset, scale);
+    const mousePos = getCanvasPoint(e)
+      if (zoneDrawingMode === 'polygon') {
+        handlePolygonClick(mousePos.x, mousePos.y);
+        setCurrentPoint(mousePos); // Track the current mouse position for preview
+        return;
+      }else if (zoneDrawingMode === 'rectangle' || zoneDrawingMode === 'circle') {
+      setIsDrawing(true);
+      setCurrentZonePoints([{ x:mousePos.x, y:mousePos.y }]);
+      return;
+    }
     handleObjectDrag(e, pois, setDraggingId, setOffset, offset, scale);
     handlePan(e, setIsDragging, setDragStart, offset, tool);
+    const selectedZone = handleZoneMouseDown(mousePos.x, mousePos.y, false);
+    if(selectedZone) return;
     mouseDown(e,tool)
     switch (tool) {
       case 'path':
@@ -262,8 +337,6 @@ const FloorPlanV4 = () => {
         break;
       case 'select':
         handleSelect(mousePos, setSelectedItem,doors, pois,walls,rooms);
-       // const item = findItemAt(mousePos,doors,pois,zones,walls,rooms);
-        //setSelectedItem(item);
         break;
       case 'door':
         handleDoor(mousePos, selectedItem, walls, calculateDoorPosition, doors, setDoors);
@@ -277,9 +350,6 @@ const FloorPlanV4 = () => {
       case 'room':
           handleRoomDrawing(mousePos,currentRoom,setCurrentRoom,setRooms,calculatePolygonArea,setIsDrawing,isNearPoint );
           break;
-      case "zone":
-        handleZoneDrawing(mousePos,zoneShapeType,zones, setCurrentZone,setIsDrawing,currentPolygonPoints,setCurrentPolygonPoints,setZones,setShowZoneForm,setNewZoneName)
-      break;
        /*   default:
         handleDrawingStart(tool, mousePos, setCurrentWall, setCurrentWindow, setCurrentRoom, currentRoom, isNearPoint);
         setIsDrawing(true); */ 
@@ -289,6 +359,13 @@ const FloorPlanV4 = () => {
   const handleMouseMove = (e) => {
     const canvas = canvasRef.current;
     const mousePos = getMousePos(canvas, e, offset, scale);
+    //console.log("Mouse Move Event Triggered",zoneDrawingMode,isDrawing);
+    if (isDrawing && zoneDrawingMode) {
+      setCurrentPoint(mousePos); // Track the current mouse position for preview
+      return;
+    }
+   // console.log("dkhalll ",mousePos)
+    handleZoneMouseMove(mousePos.x,mousePos.y)
     mouseMove(e,tool)
     if (draggingId !== null) {
       const { offsetX, offsetY } = e.nativeEvent;
@@ -320,7 +397,7 @@ const FloorPlanV4 = () => {
     }*/
    
     // zone -mouse move 
-    if (isDrawing && tool === "zone" && currentZone) {
+   /* if (isDrawing && tool === "zone" && currentZone) {
       const mousePos = getMousePos(canvas, e, offset, scale);
 
       if (
@@ -332,91 +409,28 @@ const FloorPlanV4 = () => {
           end: { x: mousePos.x, y: mousePos.y },
         });
       }
-    }
+    }*/
   };
   
   const handleMouseUp = (e) => {
     const mousePos = getMousePos(canvasRef.current, e, offset, scale);
+    if (isDrawing && zoneDrawingMode) {
+      if (zoneDrawingMode === 'rectangle') {
+        finishRectangleZone(currentZonePoints[0], mousePos);
+      } else if (zoneDrawingMode === 'circle') {
+        finishCircleZone(currentZonePoints[0], mousePos);
+      }
+      setTool("select")
+      return;
+    }
     handleDrawingEnd(tool,mousePos,currentWall, setWalls,currentWindow, setWindows,currentRoom, setRooms,calculatePolygonArea,setCurrentRoom, setIsDrawing,isNearPoint );
-    setIsDrawing(false); // Stop drawing mode
     setDraggingId(stopDraggingPOI());
+    handleZoneMouseUp()
     mouseUp(e,tool)
     if (isDragging) {
       setIsDragging(false);
       return;
     }
-    if (!isDrawing) return;
-   /* if (tool === 'wall' && currentWall) {
-      const dx = currentWall.end.x - currentWall.start.x;
-      const dy = currentWall.end.y - currentWall.start.y;
-      const length = Math.sqrt(dx * dx + dy * dy);
-
-      if (length > 10) {
-        setWalls([...walls, { ...currentWall }]);
-      }
-
-      setCurrentWall(null);
-    } else if (tool === 'window' && currentWindow) {
-      const dx = currentWindow.end.x - currentWindow.start.x;
-      const dy = currentWindow.end.y - currentWindow.start.y;
-      const length = Math.sqrt(dx * dx + dy * dy);
-
-      if (length > 10) {
-        setWindows([...windows, { ...currentWindow, type: 'window' }]);
-      }
-
-      setCurrentWindow(null);
-    }else*/
-    //mouseUp(e,tool)
-    
-    if (isDrawing && tool === "zone") {
-      if (
-        currentZone &&
-        (currentZone.shapeType === "rectangle" ||
-          currentZone.shapeType === "circle")
-      ) {
-        const dx = currentZone.end.x - currentZone.start.x;
-        const dy = currentZone.end.y - currentZone.start.y;
-
-        if (
-          currentZone.shapeType === "rectangle" &&
-          Math.abs(dx) > 10 &&
-          Math.abs(dy) > 10
-        ) {
-          const newZone = {
-            ...currentZone,
-            x: Math.min(currentZone.start.x, currentZone.end.x),
-            y: Math.min(currentZone.start.y, currentZone.end.y),
-            width: Math.abs(dx),
-            height: Math.abs(dy),
-          };
-          setZones([...zones, newZone]);
-          setShowZoneForm(true);
-          setNewZoneName("");
-        } else if (
-          currentZone.shapeType === "circle" &&
-          Math.sqrt(dx * dx + dy * dy) > 10
-        ) {
-          const centerX = currentZone.start.x;
-          const centerY = currentZone.start.y;
-          const radius = Math.sqrt(dx * dx + dy * dy);
-
-          const newZone = {
-            ...currentZone,
-            center: { x: centerX, y: centerY },
-            radius: radius,
-          };
-          setZones([...zones, newZone]);
-          setShowZoneForm(true);
-          setNewZoneName("");
-        }
-
-        setCurrentZone(null);
-      }
-      setIsDrawing(false);
-    }
-
-    setIsDrawing(false);
   };
 
   const handleWheel = (e) => {
@@ -431,7 +445,6 @@ const FloorPlanV4 = () => {
       const success = await GeoJsonManipulation.loadFloorPlanFromFileModel(file,setWalls,setRooms,setDoors,setWindows,setJsonData,setImageInfo,setScale,setOffset,canvasSize);
       if (success) {
         console.log("Plan d'étage chargé avec succès");
-        // Réinitialiser le chemin actuel et les points de navigation
         setPathPoints({ start: null, end: null });
         setCurrentPath([]);
         setSelectedItem(null);
@@ -488,60 +501,6 @@ const FloorPlanV4 = () => {
       handlePOI(e, canvasRef, setPendingPoi, setShowPoiForm, offset, scale);
     }
   };
-
-  const [selectedWall, setSelectedWall] = useState(null); // Stores the selected wall
-  const [isResizing, setIsResizing] = useState(false); // Tracks if resizing is active
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 }); // Stores mouse offset for dragging
-
-  const startDraggingWall = (x, y) => {
-    if (selectedWall) {
-        setDragOffset({ x: x - selectedWall.x, y: y - selectedWall.y });
-        setIsDragging(true);
-    }
-  };
-
-  const selectWall = (x, y) => {
-    const clickedWall = walls.find(wall => 
-        x >= wall.x && x <= wall.x + wall.width &&
-        y >= wall.y && y <= wall.y + wall.height
-    );
-    setSelectedWall(clickedWall || null);
-  };
-  
-  const startResizingWall = (x, y) => {
-    if (selectedWall) {
-        const nearRightEdge = x >= selectedWall.x + selectedWall.width - 10;
-        if (nearRightEdge) {
-            setIsResizing(true);
-        }
-    }
-  };
-
-  const updateWallPosition = (x, y) => {
-    if (isDragging && selectedWall) {
-        setWalls(prevWalls => prevWalls.map(wall => 
-            wall === selectedWall 
-                ? { ...wall, x: x - dragOffset.x, y: y - dragOffset.y }
-                : wall
-        ));
-    }
-  };
-
-  const updateWallSize = (x) => {
-    if (isResizing && selectedWall) {
-        setWalls(prevWalls => prevWalls.map(wall => 
-            wall === selectedWall 
-                ? { ...wall, width: Math.max(10, x - wall.x) }
-                : wall
-        ));
-    }
-  };
-  const deselectWall = () => {
-    setSelectedWall(null);
-    setIsDragging(false);
-    setIsResizing(false);
-  };
-
 
   return (
     <div className="flex flex-col h-screen">
@@ -634,38 +593,12 @@ const FloorPlanV4 = () => {
               Zone
             </button>
             {tool === "zone" && (
-              <div className="pl-4 space-y-1 mt-1">
-                <button
-                  className={`w-full px-2 py-1 text-sm rounded ${
-                    zoneShapeType === "rectangle"
-                      ? "bg-blue-300 text-white"
-                      : "bg-gray-100"
-                  }`}
-                  onClick={() => setZoneShapeType("rectangle")}
-                >
-                  Rectangle
-                </button>
-                <button
-                  className={`w-full px-2 py-1 text-sm rounded ${
-                    zoneShapeType === "circle"
-                      ? "bg-blue-300 text-white"
-                      : "bg-gray-100"
-                  }`}
-                  onClick={() => setZoneShapeType("circle")}
-                >
-                  Cercle
-                </button>
-                <button
-                  className={`w-full px-2 py-1 text-sm rounded ${
-                    zoneShapeType === "polygon"
-                      ? "bg-blue-300 text-white"
-                      : "bg-gray-100"
-                  }`}
-                  onClick={() => setZoneShapeType("polygon")}
-                >
-                  Polygone
-                </button>
-              </div>
+      <div className="zone-tools">
+        <button onClick={() => handleZoneToolClick('rectangle')}>Rectangle Zone</button>
+        <button onClick={() => handleZoneToolClick('circle')}>Circle Zone</button>
+        <button onClick={() => handleZoneToolClick('polygon')}>Polygon Zone</button>
+        <button onClick={() => handleZoneToolClick('coordinates')}>Manual Coordinates</button>
+      </div>
             )}
              <button
         className={`w-full px-3 py-2 rounded ${tool === 'door' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
@@ -777,13 +710,54 @@ const FloorPlanV4 = () => {
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
-              className="absolute top-0 left-0 w-full h-full"
+              onDoubleClick={handleDoubleClick}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                if (zoneDrawingMode === 'polygon' && currentZonePoints.length >= 3) {
+                  finishPolygonZone();
+                }
+              }}
+              className="border border-red-700"
               style={{ 
+                pointerEvents:"auto",
                 cursor: 
                   nearNodePoint ? 'grab' : 
                   (mode === 'line' || mode === 'partition') ? 'crosshair' : 'default' 
               }}
             />
+
+
+{showZoneProperties && selectedZone && (
+  <ZonePropertiesPanel
+    selectedZone={selectedZone}
+    onUpdate={updateZoneProperties}
+    onClose={() => setShowZoneProperties(false)}
+    predefinedZoneTypes={predefinedZoneTypes}
+    onAddCustomType={addCustomZoneType}
+    coordinatesInMeters={coordinatesInMeters}
+    updateCoordinate={updateCoordinates}
+    initiateZoneDelete={initiateZoneDelete}
+  />
+)}
+{showDeleteConfirmation && (
+  <ConfirmationDialog
+    message={`Are you sure you want to delete the zone "${zoneToDelete?.name}"?`}
+    onConfirm={deleteZone}
+    onCancel={cancelZoneDeletion}
+  />
+)}
+{zoneDrawingMode === 'polygon' && currentZonePoints.length >= 3 && (
+  <button
+    className="px-2 py-1 bg-green-500 text-white text-sm rounded absolute bottom-4 right-4 z-10"
+    onClick={() => finishPolygonZone()}
+  >
+    Finish Polygon
+  </button>
+)}
+
+{selectedWallId !== null && tool === 'select' && (
+  <DeleteWallButton wallId={selectedWallId} onDelete={deleteWall} />
+)}
 
 <WallLengthPopup
       visible={wallLengthPopup.visible}
@@ -794,10 +768,9 @@ const FloorPlanV4 = () => {
       onCancel={() => cancelWallLengthPopup()}
     />
           </div>
-
-          
         </div>
       </div>
+
       {showPoiForm && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white p-4 rounded shadow-lg">

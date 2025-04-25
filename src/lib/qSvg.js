@@ -1,7 +1,9 @@
 // src/utils/roomDetection.js
 import {junctionList,rayCasting,vertexList,segmentTree,areaRoom,arrayCompare,polygonIntoWalls,area, calculatePolygonCentroid} from "./helper"
 import { isPointInPolygon } from "./utils";
-
+export const PIXELS_PER_METER=100;
+export const ORIGIN_X=0;
+export const ORIGIN_Y=0;
 // Function to check if two line segments intersect
 function doLinesIntersect(line1, line2) {
   const x1 = line1.start.x;
@@ -466,7 +468,7 @@ for (const startIdx of startPoints) {
       }
     }
 
-    const areaInfo = calculatePolygonArea(coords);
+    const areaInfo = calculatePolygonArea(coords,PIXELS_PER_METER);
 
     // push to hallway / allCycles
     hallwayCycles.push({ path, coords,
@@ -766,4 +768,13 @@ export function createSVGElement(parent, tagName, attrs = {}) {
   }
 
   return elem;
+}
+
+
+export const pixelsToMeters = (pixelValue)=>{
+  return ((pixelValue - ORIGIN_X) / PIXELS_PER_METER).toFixed(2)
+}
+
+export const metersToPixels=(meterValue)=>{
+  return (meterValue * PIXELS_PER_METER) + ORIGIN_X
 }
