@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { calculateWallPolygon, computeWallAngle, findConnectedWalls, findWallAtPoint, nearWall, nearWallNode } from '../lib/walls';
+import { calculateWallPolygon, computeWallAngle, findConnectedWalls, findWallAtPoint, isPointNearWall, nearWall, nearWallNode } from '../lib/walls';
 import { middle, polygonize } from '../lib/qSvg';
 import { almostEqual, nearVertex } from '../lib/helper';
 import { calculateSnapPoint, findRoomAtPoint, getRoomCenter, isPointsEqual } from '../lib/utils';
@@ -7,12 +7,12 @@ import Obj2D from '../lib/editor';
 import { displayMeasurements } from '../Draw';
 export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
   const [walls,setWalls]=useState([])
-  const [mode,setMode]=useState("select")
   const [modeOption,setModeOption]=useState("")
   const [placedObjects,setPlacedObjects]=useState([])
   const [isPreview,setIsPreview]=useState(true)
   const [roomProps,setRoomPropsPanel]=useState({})
   const binderRef = useRef(null)
+  const [startMoving,setStartMoving]=useState(false)
   const [binderVersion, setBinderVersion] = useState(1);
   const [action,setAction]=useState(0)
   const [dragState,setDragState]=useState(null)
@@ -26,39 +26,164 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
   const [connectedWalls, setConnectedWalls] = useState([]);
   const [selectedRoom,setSelectedRoom]=useState(null)
   const [rooms,setRooms]= useState({polygons:[]});
-  const [wallThickness, setWallThickness] = useState(12);
-  const [roomData, setRoomData] = useState([]);
-  
-  
-  // console.log("wallls",walls,rooms)
+  const [wallLengthPopup, setWallLengthPopup] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    inputValue: '',
+    currentLength: 0
+  });
+  // Define a palette of colors for rooms
+  const roomColorPalette = [
+    '#f0daaf', // Beige
+    '#d3e4ff', // Light Blue
+    '#e0f0d0', // Light Green
+    '#f1e2f1', // Light Purple
+    '#ffe0e0', // Light Pink
+    '#e6f2f2', // Light Cyan
+    '#fff4e0', // Light Peach
+    '#e6e6fa', // Lavender
+    '#ffead7', // Light Orange
+    '#e0f2e0'  // Mint Green
+  ];
 
+  // Function to assign different colors to adjacent rooms
+  const assignRoomColors = (polygons) => {
+    if (!polygons || polygons.length === 0) return {};
+    
+    const colorAssignments = {};
+    const adjacentRooms = {}; // Track which rooms are adjacent
+    
+    // First, identify adjacent rooms
+    for (let i = 0; i < polygons.length; i++) {
+      adjacentRooms[i] = [];
+      
+      for (let j = 0; j < polygons.length; j++) {
+        if (i === j) continue;
+        
+        // Check if rooms share any walls
+        let sharesWall = false;
+        
+        // Check if any edge is shared between the two rooms
+        for (let e1 = 0; e1 < polygons[i].coords.length; e1++) {
+          const p1 = polygons[i].coords[e1];
+          const p2 = polygons[i].coords[(e1 + 1) % polygons[i].coords.length];
+          
+          for (let e2 = 0; e2 < polygons[j].coords.length; e2++) {
+            const p3 = polygons[j].coords[e2];
+            const p4 = polygons[j].coords[(e2 + 1) % polygons[j].coords.length];
+            
+            // Check if edges overlap (simplified)
+            if ((almostEqual(p1.x, p3.x) && almostEqual(p1.y, p3.y) && 
+                 almostEqual(p2.x, p4.x) && almostEqual(p2.y, p4.y)) ||
+                (almostEqual(p1.x, p4.x) && almostEqual(p1.y, p4.y) && 
+                 almostEqual(p2.x, p3.x) && almostEqual(p2.y, p3.y))) {
+              sharesWall = true;
+              break;
+            }
+          }
+          if (sharesWall) break;
+        }
+        
+        if (sharesWall) {
+          adjacentRooms[i].push(j);
+        }
+      }
+    }
+    
 
-    useEffect(() => {
-      if (walls.length > 0 && (tool == "partition" || tool =="select")) {
-        // console.log("OUIIIIIIIIIIIII",tool,walls,selectedRoom)
-        if(selectedRoom == null){
-        const roomsResult = polygonize(walls);
-        setRooms(roomsResult);
+    // Assign colors using graph coloring algorithm
+    for (let i = 0; i < polygons.length; i++) {
+      // Get colors used by adjacent rooms
+      const usedColors = adjacentRooms[i].map(adj => colorAssignments[adj]).filter(Boolean);
+      
+      // Find the first available color not used by neighbors
+      for (let color of roomColorPalette) {
+        if (!usedColors.includes(color)) {
+          colorAssignments[i] = color;
+          break;
+        }
       }
+      
+      // If all colors are used by neighbors, just pick the first one
+      if (!colorAssignments[i]) {
+        colorAssignments[i] = roomColorPalette[0];
       }
-    }, [walls]);
+    }
+    
+    return colorAssignments;
+  };
+
+  useEffect(() => {
+    if (walls.length > 0 && selectedRoom === null) {
+      const roomsResult = polygonize(walls);
+   //   console.log("ROOMS RESULT",roomsResult)
+      // Assign colors to rooms
+      if (roomsResult.polygons && roomsResult.polygons.length > 0) {
+        const colors = assignRoomColors(roomsResult.polygons);
+        
+        // Apply colors to the rooms
+        for (let i = 0; i < roomsResult.polygons.length; i++) {
+          if (colors[i]) {
+            roomsResult.polygons[i].color = colors[i];
+          }
+        }
+      }
+      setRooms({ ...roomsResult });
+    }
+  }, [walls]);
 
     useEffect(()=>{
-      // useEffect to update move Objects
       walls.forEach(wall => {
-        // call updateWallObjects
         updateWallObjects(wall,wall)
       })
     },[walls])
-
-    // draw Room function
-    const drawRooms = (ctx, rooms) => {
-      if (!rooms || !rooms.polygons) return;
+    // apply wall length function 
+    const applyWallLength = (length) => {
+      //console.log("APPLY WALL LENGTH",length,startPoint,currentPoint)
+      if (!startPoint || !length) return;
+     // console.log("APPLY WALL LENGTH",length)
+      const lengthInPixels = length * 100;
       
+      // Calculate angle between start and current point
+      const currentAngle = Math.atan2(
+        currentPoint.y - startPoint.y,
+        currentPoint.x - startPoint.x
+      );
+      
+      // Calculate new endpoint based on specified length and angle
+      const newEndPoint = {
+        x: startPoint.x + lengthInPixels * Math.cos(currentAngle),
+        y: startPoint.y + lengthInPixels * Math.sin(currentAngle)
+      };
+      
+      setCurrentPoint(newEndPoint);
+      // update the wall 
+      setWalls(prev => prev.map((wall, index) => {
+        if(index==wallLengthPopup.wallId){
+          return {
+            ...wall,
+            start: { ...startPoint },
+            end: { ...newEndPoint },
+            type: tool,
+            wallId : wallLengthPopup.wallId, 
+            thickness: wall.thickness
+          };
+        }
+        return wall;
+      }))
+      // Hide popup
+      setWallLengthPopup({...wallLengthPopup, visible: false});
+      setStartPoint(null);
+      setCurrentPoint(null);
+      setAction(0);
+    };
+    // draw Room function
+    const drawRooms = (ctx) => {
+      if (!rooms || !rooms.polygons) return;
       Object.entries(rooms.polygons).forEach(([index, room]) => {
         if (!room.coords || room.coords.length < 3) return;
         
-        // Draw room polygon
         ctx.beginPath();
         ctx.moveTo(room.coords[0].x, room.coords[0].y);
         
@@ -89,23 +214,16 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
         }
   
         // Always display area measurement
-        if (room.realArea) {
-          const formattedArea = (room.realArea / 3600).toFixed(2) + " m²";
+        if (room.area) {
+          const formattedArea = room.area.toFixed(2)+ " m²";
           ctx.font = '12px Arial';
           ctx.fillStyle = '#333';
           ctx.textAlign = 'center';
           ctx.fillText(formattedArea, centerX, centerY + 10);
         }
-        
-        // Additionally show surface data if specified
-        if (roomData[index]?.showSurface && roomData[index]?.surface) {
-          ctx.fillText(roomData[index].surface, centerX, centerY + 30);
-        }
       });
     };
-
-    // draw Wall function 
-    const drawWalls = (walls,ctx) => {
+    const drawWalls = (ctx) => {
       walls.forEach(wall=>{
         const wallPolygon = calculateWallPolygon(wall.start, wall.end, wall.thickness);
       
@@ -116,7 +234,6 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
         }
         ctx.closePath();
         
-        //ctx.fillStyle = '#fff';
         ctx.strokeStyle = '#333';
         ctx.lineWidth = wall.thickness;
         ctx.fill();
@@ -158,7 +275,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
     ctx.fillStyle = '#333';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.fillText(`${(distance / 60).toFixed(2)} m`, midPoint.x, midPoint.y - 5);
+    ctx.fillText(`${(distance / 100).toFixed(2)} m`, midPoint.x, midPoint.y - 5);
   };
 
   const getCanvasPoint = (event) => {
@@ -176,18 +293,14 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
 
   const handleWallMove = (wallId, e) => {
     const point = getCanvasPoint(e);
-    console.log(dragState,"drag")
     if (!dragState || !dragState.originalWalls) return;
   
-    // compute your constrained deltas
     const deltaX = (point.x - dragState.startX) * 0.5;
     const deltaY = (point.y - dragState.startY) * 0.5;
-  
     const newWalls = JSON.parse(JSON.stringify(walls))
     const selWall = newWalls[wallId];
     const origSelWall  = dragState.originalWalls[wallId];
-    console.log("selWall",selWall)
-    console.log("original wall",origSelWall)
+    //console.log("ORIGINAL WALL",origSelWall)
     selWall.start.x = origSelWall.start.x + deltaX;
     selWall.start.y = origSelWall.start.y + deltaY;
     selWall.end.x   = origSelWall.end.x   + deltaX;
@@ -195,13 +308,11 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
       // move wall objects
     updateWallObjects(selWall,origSelWall,point)
   
-    // Now handle connected walls exactly the same way:
     if (dragState.connectedWalls) {
         dragState.connectedWalls.forEach(({ wallId: connId }) => {
         if (connId === wallId) return;
         const connWall     = newWalls[connId];
         const origConnWall = dragState.originalWalls[connId];
-        // move endpoints if they matched the selected wall’s endpoints
         if (isPointsEqual(origConnWall.start, origSelWall.start) ||
             isPointsEqual(origConnWall.start, origSelWall.end)) {
           connWall.start.x = origConnWall.start.x + deltaX;
@@ -219,35 +330,27 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
   };
 
   const moveRoomIncremental = (roomId, deltaX, deltaY) => {
-    // Use small movement factor if needed (0.5 = half speed, 1.0 = normal)
     const movementFactor = 1.0;
     const adjustedDeltaX = deltaX * movementFactor;
     const adjustedDeltaY = deltaY * movementFactor;
     
-    // Create deep copies to avoid reference issues
     const newWalls = JSON.parse(JSON.stringify(walls));
     const newRooms = JSON.parse(JSON.stringify(rooms));
     
-    console.log("dkhall hna",newRooms)
-    // Find walls belonging to this room
     const wallsToMove = findWallsForRoom(roomId);
     
-    // Move room coordinates
     for (let i = 0; i < newRooms.polygons[roomId].coords.length; i++) {
       newRooms.polygons[roomId].coords[i].x += adjustedDeltaX;
       newRooms.polygons[roomId].coords[i].y += adjustedDeltaY;
     }
     
-    // Move inner rooms
     const innerRooms = newRooms.polygons[roomId].inside || [];
     for (const innerRoomId of innerRooms) {
-      // Move inner room coordinates
       for (let i = 0; i < newRooms.polygons[innerRoomId].coords.length; i++) {
         newRooms.polygons[innerRoomId].coords[i].x += adjustedDeltaX;
         newRooms.polygons[innerRoomId].coords[i].y += adjustedDeltaY;
       }
       
-      // Add inner room walls to move list
       const innerWalls = findWallsForRoom(innerRoomId);
       for (const wallIndex of innerWalls) {
         if (!wallsToMove.includes(wallIndex)) {
@@ -256,36 +359,29 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
       }
     }
     
-    // Move walls
     for (const wallIndex of wallsToMove) {
-      // Move both endpoints
       newWalls[wallIndex].start.x += adjustedDeltaX;
       newWalls[wallIndex].start.y += adjustedDeltaY;
       newWalls[wallIndex].end.x += adjustedDeltaX;
       newWalls[wallIndex].end.y += adjustedDeltaY;
     }
     
-    // Update state
     setWalls(newWalls);
     setRooms(newRooms);
   };
 
 
   const findWallsForRoom = (roomId) => {
-    console.log("rooms",rooms,roomId)
     const roomCoords = rooms.polygons[roomId].coords;
     const wallIndices = [];
     
-    // For each edge in the room polygon
     for (let i = 0; i < roomCoords.length - 1; i++) {
       const start = roomCoords[i];
       const end = roomCoords[i + 1];
       
-      // Find matching wall
       for (let w = 0; w < walls.length; w++) {
         const wall = walls[w];
         
-        // Check if this wall matches this edge (in either direction)
         if ((almostEqual(wall.start.x, start.x) && 
              almostEqual(wall.start.y, start.y) && 
              almostEqual(wall.end.x, end.x) && 
@@ -295,9 +391,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
              almostEqual(wall.end.x, start.x) && 
              almostEqual(wall.end.y, start.y))) {
           
-          // Add to our list of walls if not already included
           if (!wallIndices.includes(w)) {
-            console.log("dkhall hhhhhhh",w)
             wallIndices.push(w);
           }
           break;
@@ -309,13 +403,11 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
   
 
   const updateWallObjects=(wall,originWall,point)=>{
+  //  console.log("UPDATE WALL OBJECTS",wall,originWall,point)
     const wallId = wall.wallId
     if(!placedObjects.some(obj => obj.wallId == wallId)) return
-    //console.log("wallID connected is",wallId,placedObjects.filter(obj => obj.wallId == wallId))
-   //const wall = walls[wallId]
-   console.log("drag state",dragState)
    const originObject = (dragState && (dragState.type == "doorWindow" || dragState.type=="wall")) ? dragState.objects.filter(origin => origin.wallId == wallId) : null
-   console.log("originObject",originObject) 
+   //console.log("ORIGIN OBJECT ",originObject)
    placedObjects.filter(obj => obj.wallId == wallId).forEach((obj,i) => {
       const angleWall = point ? computeWallAngle(wall,point) : null;
        const origWallVector = {
@@ -328,36 +420,21 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
       };
   
 
-      // Calculate original wall length
       const origWallLength = Math.sqrt(
         origWallVector.x * origWallVector.x + 
         origWallVector.y * origWallVector.y
       );
-      
-      if(originObject){
-        console.log("CALLED ",i,originObject,originWall)
-      }
   
-      // Calculate vector from wall start to object
       const objVector = {
         x: (originObject ?  originObject[i].x : obj.x) - originWall.start.x,
         y:   (originObject ?  originObject[i].y : obj.y) -  originWall.start.y
       };
-  
-      console.log("origWallVector",origWallVector)
-      
-      // Calculate relative position along wall (0 to 1)
-      // Using dot product and projection
       const dotProduct = objVector.x * origWallVector.x + objVector.y * origWallVector.y;
-      console.log("dotProduct",dotProduct,objVector,origWallLength)
       const relativePos = dotProduct / (origWallLength * origWallLength);
-      
-      // Store this for future use
+    //  console.log("CALLED ",i,relativePos)
       obj.relPos = relativePos;
-      console.log("--61---",wall.start.x, relativePos , wallVector.x)
-      console.log("---62---",wall.start.y ,relativePos ,wallVector.y)
-  // Calculate new position using relative position
-  obj.x = wall.start.x + relativePos * wallVector.x;
+  
+  obj.x = wall.start.x + relativePos * wallVector.x
   obj.y = wall.start.y + relativePos * wallVector.y;
   obj.angle  = angleWall ?  angleWall.angle : obj.angle;
   obj.angleSign = angleWall ? angleWall.angleSign : obj.angleSign; 
@@ -381,19 +458,15 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
   }
 
 
-  // drag vertex logic 
   const handleVertexDrag = (point) => {
       if (!selectedVertex || !isDraggingVertex) return;
-      // Horizontal/vertical snapping to connected walls
       connectedWalls.forEach(({ wall, isStart }) => {
         const oppositeEnd = isStart ? wall.end : wall.start;
         
-        // Snap to horizontal alignment
         if (Math.abs(oppositeEnd.x - point.x) < 20) {
           point.x = oppositeEnd.x;
         }
         
-        // Snap to vertical alignment
         if (Math.abs(oppositeEnd.y - point.y) < 20) {
           point.y = oppositeEnd.y;
         }
@@ -401,7 +474,6 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
       
       const newWalls = [...walls];
       
-      // Update connected walls
       connectedWalls.forEach(({ wall, isStart, index }) => {
         if (isStart) {
           newWalls[index] = {
@@ -421,59 +493,63 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
           };
         }
       });
-      // Update states
       setWalls(newWalls);
-      // update wall objects 
       newWalls.forEach(wall=>updateWallObjects(wall,wall,point))
-     // setObjects(updatedObjects);
     };
 
-      // update rooms after wall changes
   const updateRoomsForWalls=(currentWalls)=>{
     const roomsResult = polygonize(currentWalls);
-  // Update rooms state
     setRooms(roomsResult);
   }
 
-  const finishWall = () => {
+  const finishWall = (type) => {
     if (!startPoint || !currentPoint) return;
-    
-    // Calculate distance
     const distance = Math.sqrt(
       Math.pow(currentPoint.x - startPoint.x, 2) + 
       Math.pow(currentPoint.y - startPoint.y, 2)
     );
     
-    // Only create walls of a meaningful length
     if (distance > 15) {
       const newWall = {
         start: { ...startPoint },
         end: { ...currentPoint },
+        type,
         wallId : walls?.length, 
-        thickness: tool === 'wall' ? wallThickness : 6
+        thickness: tool === 'wall' ? 10 : 6
       };
       
       setWalls(prevWalls => [...prevWalls, newWall]);
       
-      // In multi-mode, continue drawing from the current point
       if (isMultiMode) {
         setStartPoint(currentPoint);
       } else {
         setAction(0);
-        setStartPoint(null);
-        setCurrentPoint(null);
+       // setStartPoint(null);
+        //setCurrentPoint(null);
       }
+      // Instead of immediately creating a wall, show the popup
+      setWallLengthPopup({
+        ...wallLengthPopup,
+        visible: true,
+        wallId:walls.length,
+        x: (startPoint.x + currentPoint.x) / 2,
+        y: (startPoint.y + currentPoint.y) / 2 - 40
+      });
+      
+      // Don't finish the wall yet - that will happen when applyWallLength is called
+      // We also don't reset action, startPoint and currentPoint yet
     } else {
-      // Too short, cancel
+      // For very short movements, just cancel
       setAction(0);
       setStartPoint(null);
       setCurrentPoint(null);
+      setWallLengthPopup({...wallLengthPopup, visible: false});
     }
+
   };
 
   const handleMouseDown = (event)=>{
     const point = getCanvasPoint(event);
-        // console.log("mode issssssss",tool,action)
         if (tool === 'select') {
           const vertex = nearVertex(walls,point,10)
           if(vertex){
@@ -483,10 +559,8 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
             setIsDraggingVertex(true);
             return 
           }
-          // move door || window objects
           const objectTarget = findObjectUnderCursor(point)
           if(objectTarget && (objectTarget.class == "doorWindow" || objectTarget.family == "inWall")){
-            // set Drag State
             setDragState({
               type: 'doorWindow',
               id: objectTarget.id,
@@ -499,11 +573,9 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
                 wallId: objectTarget.wallId
               }
             });
-            // Create or update the binder object for visual feedback
         if (!binderRef.current) {
           binderRef.current = objectTarget;
         }
-        // change MODE
         onChangeTool("door_mode")
         setIsPreview(true)
         setBinderVersion(prev => prev + 1)
@@ -511,12 +583,10 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
           }
           const wallInfo = nearWall(point, 6,walls);
           const {wall,wallId}=wallInfo
-          console.log("from wall info hhhh",wallId,wall)
         if (wall) {
           if(selectedRoom!=null) setSelectedRoom(null)
         const connectedWalls= findConnectedWalls(walls,wallId);
       const wallIds = connectedWalls?.map(wall=>wall.wallId )
-      console.log("connected walls ....",wallId)
         setDragState({
           type: 'wall',
           id: wallId,
@@ -529,15 +599,34 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
             end: { ...wall.end }
           }))
         });
+
+        // Show wall length popup for selected wall
+    const selectedWall = walls[wallId];
+    const distance = Math.sqrt(
+      Math.pow(selectedWall.end.x - selectedWall.start.x, 2) + 
+      Math.pow(selectedWall.end.y - selectedWall.start.y, 2)
+    );
+    
+    setStartPoint(selectedWall.start);
+    setCurrentPoint(selectedWall.end);
+    
+    setWallLengthPopup({
+      visible: true,
+      wallId: wallId,
+      x: (selectedWall.start.x + selectedWall.end.x) / 2,
+      y: (selectedWall.start.y + selectedWall.end.y) / 2 - 40,
+      inputValue: (distance / 100).toFixed(2),
+      currentLength: distance / 100
+    });
+    
+    return;
+
         return 
       }else{
-        // console.log("dkhall hna rooms",rooms.length)
         if(rooms.polygons){   
         const roomId = findRoomAtPoint(rooms,point);
           if (roomId !== null) {
-            // set selected the room
             setSelectedRoom(roomId)
-            console.log("called here 22",rooms.polygons[roomId])
             setRoomPropsPanel({
               visible: true,
               name: rooms.polygons[roomId]?.name || '',
@@ -548,20 +637,16 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
               id: roomId,
               startX: point.x,
               startY: point.y,
-              lastX: point.x,  // Track last position for incremental movements
+              lastX: point.x,  
               lastY: point.y,
-              // Store room center for more natural movement
               roomCenterX: getRoomCenter(rooms,roomId).x,
               roomCenterY: getRoomCenter(rooms,roomId).y
             });
           }
           }else{
-              // Then check for wall selection
               const wallId = findWallAtPoint(point);
-              console.log(wallId,"wallId")
               if (wallId !== null) {
                 if(selectedRoom!=null) setSelectedRoom(null)
-                // Start wall drag
                 setDragState({
                   type: 'wall',
                   id: wallId,
@@ -570,10 +655,6 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
                   origStart: {...walls[wallId].start},
                   origEnd: {...walls[wallId].end}
                 });
-                
-                // Change cursor and highlight selected wall
-                //setCursor('move');
-                //highlightWall(wallId);
               }
           }}
         }else{
@@ -582,32 +663,31 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
         const snap = calculateSnapPoint(walls,point);
         
         if (action === 0) {
-          // console.log("dkhall hna salam ")
-          // Start drawing a new wall
           setStartPoint(snap);
           setAction(1);
         } else {
-          // Complete the current wall
           finishWall();
         }}
   }
 
-  // mouse move function 
+  const cancelWallLengthPopup = () => {
+    setWallLengthPopup({
+      ...wallLengthPopup, 
+      visible: false
+    });
+  };
+
    const handleMouseMove = (event) => {
-    // console.log("caled rom mouse move ...",tool)
       if(tool!="door_mode"){
         binderRef.current
         =null
       }
       const point = getCanvasPoint(event);
       if (isDraggingVertex && selectedVertex) {
-        // Handle vertex dragging - Step 5
         handleVertexDrag(point);
         return;
       }
-        // mouse move without dragging 
         if(tool=="select"){
-          // console.log("select is .........",dragState,tool)
           const vertex = nearVertex(walls,point,10);
           if (vertex) {
             setHoverVertex(vertex);
@@ -627,35 +707,45 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
       }
       if(dragState.type =="doorWindow"){
         if(binderRef.current){
-          // call update
           binderRef.current.update()
         }
       }
       if (dragState.type === 'wall') {
+        //setStartMoving(true)
+        setWallLengthPopup({...wallLengthPopup,visible:false})
         handleWallMove(dragState.id,event);
       }
       }
       if ((tool === 'wall' || tool === 'partition') && action === 1) {
-        // Check if near a wall node for connecting
         const point = getCanvasPoint(event);
-        const nearNode = nearWallNode(walls,point);
+        const snap = calculateSnapPoint(walls,point);
+        const nearNode = isPointNearWall(point,walls,10)
         if (nearNode) {
-          setCurrentPoint(nearNode);
+          setCurrentPoint(snap);
           setNearNodePoint(nearNode);
         } else {
-          const snap = calculateSnapPoint(walls,point);
           setCurrentPoint(snap);
           setNearNodePoint(null);
         }
+        const distance = Math.sqrt(
+    Math.pow(snap.x - startPoint.x, 2) + 
+    Math.pow(snap.y - startPoint.y, 2)
+  );
+  
+  // Store the current length for use in handleMouseUp
+  setWallLengthPopup({
+    visible: false, // Keep hidden during movement
+    x: (startPoint.x + snap.x) / 2,
+    y: (startPoint.y + snap.y) / 2 - 40,
+    inputValue: (distance / 100).toFixed(2),
+    currentLength: distance / 100
+  });
       } else if (tool === "door_mode") {
-        console.log("wachhhhhhhhhhhhhhhh door mode")
         const point = getCanvasPoint(event);
-        // we need the wall *and* its index so we can update state immutably
         const wallSelect = nearWall(point, 10, walls);
         if (wallSelect) {
           const { wall, wallId } = wallSelect;
           setIsPreview(true)
-          // only create one binder at a time
           if (!binderRef.current) {
             const {angle,angleSign} = computeWallAngle(wall, point);
             const startCoords = middle(wall.start.x, wall.start.y, wall.end.x, wall.end.y);
@@ -674,14 +764,11 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
             binderRef.current=doorObj
            
           }else {
-            console.log(wallSelect)
           const wall = wallSelect.wall;
           
-          // Calculate the angle of the wall
           const {angle,angleSign} = computeWallAngle(
             wall,point
           );
-          // Update door properties
           binderRef.current.wall = wall;
           binderRef.current.wallId = wallId;
          binderRef.current.x = wallSelect.x;
@@ -689,31 +776,24 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
          binderRef.current.angle = angle;
          binderRef.current.angleSign = angleSign;
          binderRef.current.thick = wall.thickness;
-          // Update binderRef
           setBinderVersion(prev => prev +1)
          binderRef.current.update();
           }
         }
-            
       } else{
-        // Just update for hover effects
         const point = getCanvasPoint(event)
-        const nearNode = nearWallNode(walls,point);
+        const nearNode = isPointNearWall(point,walls,10)
         setNearNodePoint(nearNode);
       }
     };
 
-    // mouse up event 
     const handleMouseUp = (event) => {
-      // console.log("hnaaaaaaaaaaaaaa999",)
     if(tool=="select"){
       
       if (isDraggingVertex) {
         setIsDraggingVertex(false);
-        // Finalize the move by recalculating rooms
         const updatedRooms = polygonize(walls);
         setRooms(updatedRooms);
-        // Clear selection
         setSelectedVertex(null);
         setHoverVertex(null)
         setConnectedWalls([]);
@@ -721,34 +801,27 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
       
       if (!dragState) return;
        if (dragState.type === 'wall') {
+       // setWallLengthPopup({...wallLengthPopup,visible:false})
       updateRoomsForWalls(walls);
     }
     setDragState(null)}
       else if ((tool === 'wall' || tool === 'partition') && action === 1) {
-        finishWall();
+        finishWall(tool);
       }else if(tool=="door_mode" && binderRef.current){
-        console.log("Placing door permanently",binderRef.current)
         setPlacedObjects(prevObjects => [...prevObjects, new Object(binderRef.current)]);
         setIsPreview(false);
        onChangeTool("select");
         }
     };
   
-    // console.log(walls)
-  
     const onCancelUpdate=()=>{
       setSelectedRoom(null)
       setRoomPropsPanel({...roomProps, visible:false})
     }
-    
-    
+
     const handleSelectDoorType=(type)=>{
-      setMode("door_mode")
       setModeOption(type)
     }
-    // Change mode
-   
-
   
 
   return {
@@ -773,16 +846,16 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
     startPoint,
     selectedVertex,
     isMultiMode,
-    wallThickness,
     walls,
-    mode,
     placedObjects,
     hoverVertex,
     rooms,   
-    setMode,
     setSelectedRoom,
     selectedRoom,
-    binderRef,binderVersion,nearNodePoint
-
+    binderRef,binderVersion,nearNodePoint,
+    wallLengthPopup,
+  setWallLengthPopup,
+  cancelWallLengthPopup,
+  applyWallLength,
   };
 }

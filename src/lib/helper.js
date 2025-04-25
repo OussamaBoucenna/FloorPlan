@@ -1,3 +1,4 @@
+import { calculatePolygonArea } from './qSvg'; // Assuming you have a library for polygon area calculation
 export function junctionList(WALLS) {
     const junctions = [];
     
@@ -150,7 +151,7 @@ export function junctionList(WALLS) {
       });
     }
     
-    return area(points);
+    return calculatePolygonArea(coords, 100, false); 
   }
   
   export function area(coords) {
@@ -556,3 +557,45 @@ export const carpentryCalc = (classe, type, size, thick, value = 0) => {
   
   return result;
 };
+
+
+export const calculatePolygonCentroid=(points)=>{
+  let area = 0;
+  let cx = 0;
+  let cy = 0;
+  
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    const cross = points[i].x * points[j].y - points[j].x * points[i].y;
+    
+    area += cross;
+    cx += (points[i].x + points[j].x) * cross;
+    cy += (points[i].y + points[j].y) * cross;
+  }
+  
+  area = area / 2;
+  
+  // Handle very small or zero area (prevent division by zero)
+  if (Math.abs(area) < 0.001) {
+    // Fallback to simpler calculation for degenerate polygons
+    return {
+      x: points.reduce((sum, p) => sum + p.x, 0) / points.length,
+      y: points.reduce((sum, p) => sum + p.y, 0) / points.length
+    };
+  }
+  
+  const factor = 1 / (6 * area);
+  
+  return {
+    x: cx * factor,
+    y: cy * factor
+  };
+}
+
+export const calculateAspectRatio=(coords)=>{
+  const xs = coords.map(p => p.x);
+  const ys = coords.map(p => p.y);
+  const width = Math.max(...xs) - Math.min(...xs);
+  const height = Math.max(...ys) - Math.min(...ys);
+  return Math.max(width, height) / Math.min(width, height);
+}

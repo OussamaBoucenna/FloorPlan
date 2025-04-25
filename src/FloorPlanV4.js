@@ -4,6 +4,7 @@ import {updateCanvasSize} from './canvasUtils'
 import GeoJsonManipulation  from './GeoJsonManipulation';
 import { getMousePos, calculateDoorPosition,calculatePolygonArea, findItemAt} from './Utils';
 import {displayMeasurements , drawGrid} from './Draw';
+import {WallLengthPopup} from "./components/WallLengthPop"
 //import {drawWalls} from './handlers/handleWalls'
 import {drawDoors ,handleDoor } from './handlers/handleDoors'
 import {drawWindows } from './handlers/handleWindows'
@@ -88,16 +89,18 @@ const FloorPlanV4 = () => {
     handleSelectDoorType,
     drawWallPreview,
     setWalls,
-    getCanvasPoint,
     handleMouseDown : mouseDown,
     handleMouseMove:mouseMove,
     handleMouseUp:mouseUp,
     setRooms,
-    setAction,
+    cancelWallLengthPopup,
     currentPoint,
     startPoint,
     selectedVertex,
     wallThickness,
+    wallLengthPopup,
+    setWallLengthPopup,
+    applyWallLength,
     mode,
     placedObjects,
     action,
@@ -143,15 +146,9 @@ const FloorPlanV4 = () => {
     
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // Draw existing walls
-    //walls.forEach(wall => {
-      drawWalls(walls, ctx);
-   // });
     
-    drawRooms(ctx, rooms);
-    /*if (selectedObject?.type === 'wall') {
-      drawWall(ctx, selectedObject, true);
-    }*/
+     drawRooms(ctx);
+    drawWalls(ctx);
       if(placedObjects && placedObjects.length){
         placedObjects.forEach(object => {
           object.draw(ctxRef.current)
@@ -164,10 +161,12 @@ const FloorPlanV4 = () => {
         mode === 'wall' ? wallThickness : 10);
     }
     
+    //console.log("HHHHHHHHHHHHHHHHHHHHHHH",nearNodePoint,tool)
     // Draw green circle indicator when near a wall node
     if (nearNodePoint && tool != "select") {
+      const point = nearNodePoint.point
       ctx.beginPath();
-      ctx.arc(nearNodePoint.x, nearNodePoint.y, 8, 0, Math.PI * 2);
+      ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(92, 186, 121, 0.5)';
       ctx.fill();
       ctx.strokeStyle = '#5cba79';
@@ -249,7 +248,7 @@ const FloorPlanV4 = () => {
           setDoors(doors.filter((d) => d.id !== selectedItem.id));
         }else */if (selectedItem && selectedItem.type === "zone") {
           setZones(zones.filter((z) => z.id !== selectedItem.id));
-          console.log("Zone supprimée :", selectedItem.id);
+         // console.log("Zone supprimée :", selectedItem.id);
         }
         setSelectedItem(null);
       }
@@ -260,7 +259,7 @@ const FloorPlanV4 = () => {
  
 
   const handleMouseDown = (e) => {
-    // console.log("called ",tool)
+   // // console.log("called ",tool)
     const canvas = canvasRef.current;
     const mousePos = getMousePos(canvas, e, offset, scale);
     handleObjectDrag(e, pois, setDraggingId, setOffset, offset, scale);
@@ -815,6 +814,14 @@ const FloorPlanV4 = () => {
             ? 'crosshair'
             : 'default',
       }}
+    />
+    <WallLengthPopup
+      visible={wallLengthPopup.visible}
+      x={wallLengthPopup.x}
+      y={wallLengthPopup.y}
+      initialValue={wallLengthPopup.inputValue}
+      onApply={(value) => applyWallLength(value)}
+      onCancel={() => cancelWallLengthPopup()}
     />
   </div>
 </div>

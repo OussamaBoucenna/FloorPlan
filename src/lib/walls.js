@@ -1,4 +1,5 @@
 import { vectorDeter, vectorXY } from "./qSvg";
+import { utils } from "./utils";
 
 // src/modules/walls.js
 export const WALLS = []; // Store walls
@@ -224,3 +225,87 @@ export const findConnectedWalls = (walls,wallId) => {
   
   return connections;
 };
+
+
+// Add this function to detect if a point is near an existing wall
+export const isPointNearWall=(point, walls, threshold = 15)=> {
+  for (let i = 0; i < walls.length; i++) {
+    const wall = walls[i];
+    
+    // Calculate perpendicular distance from point to wall line
+    const line = {
+      x1: wall.start.x,
+      y1: wall.start.y,
+      x2: wall.end.x,
+      y2: wall.end.y
+    };
+    
+    const distance = perpDistance(point, line);
+    console.log("distance",distance)
+    console.log("threshold",isPointOnWallSegment(point, wall))
+    // Check if point is close enough and between the wall's endpoints
+    if (distance <= threshold && isPointOnWallSegment(point, wall)) {
+      // Return the wall and projected point
+      const projectedPoint = projectPointOnLine(point, line);
+      return {
+        wall: wall,
+        point: projectedPoint,
+        wallIndex: i,
+        type: wall.type || 'external'
+      };
+    }
+  }
+  
+  return null;
+}
+
+// Calculate perpendicular distance from point to line
+export const perpDistance=(point, line)=>{
+  const numerator = Math.abs(
+    (line.y2 - line.y1) * point.x - 
+    (line.x2 - line.x1) * point.y + 
+    line.x2 * line.y1 - 
+    line.y2 * line.x1
+  );
+  
+  const denominator = Math.sqrt(
+    Math.pow(line.y2 - line.y1, 2) + 
+    Math.pow(line.x2 - line.x1, 2)
+  );
+  
+  return numerator / denominator;
+}
+
+// Check if point projection lies on the wall segment
+export const isPointOnWallSegment=(point, wall)=>{
+  console.log("point",wall,point)
+    if(!wall) return false
+    if(!point) return false 
+    if(wall.start.x == wall.end.x) return utils.btwn(point.y, wall.start.y, wall.end.y) && utils.btwn(point.x, wall.start.x - 10, wall.end.x + 10)
+    if(wall.start.y == wall.end.y) return utils.btwn(point.x, wall.start.x, wall.end.x,10)&& utils.btwn(point.y, wall.start.y - 10, wall.end.y + 10)
+    return utils.btwn(point.y, wall.start.y, wall.end.y,5) && utils.btwn(point.x, wall.start.x, wall.end.x,5)
+}
+
+// Project point onto line
+const projectPointOnLine=(point, line)=>{
+  const dx = line.x2 - line.x1;
+  const dy = line.y2 - line.y1;
+  
+  // If the line is actually a point, return the line start
+  if (dx === 0 && dy === 0) {
+    return { x: line.x1, y: line.y1 };
+  }
+  
+  // Calculate the projection parameter
+  const t = ((point.x - line.x1) * dx + (point.y - line.y1) * dy) / 
+            (dx * dx + dy * dy);
+  
+  // Constrain t to lie within the line segment
+  const tConstrained = Math.max(0, Math.min(1, t));
+  
+  // Calculate the projected point
+  return {
+    x: line.x1 + tConstrained * dx,
+    y: line.y1 + tConstrained * dy
+  };
+}

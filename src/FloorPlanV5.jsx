@@ -13,7 +13,7 @@ export const FloorPlanEditor = () => {
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
   // import my hook 
-  const {drawRooms,drawWall,setAction,handleSelectDoorType,setCurrentPoint,setIsMultiMode, setStartPoint, drawWallPreview,handleMouseDown,handleMouseMove,handleMouseUp, setSelectedRoom,setNearNodePoint,walls,setRooms,action,selectedVertex,isMultiMode, hoverVertex,wallThickness,isPreview,nearNodePoint,currentPoint,selectedRoom, startPoint,placedObjects,mode,rooms,setMode,binderRef,binderVersion} = useFloorPlanZones(ctxRef.current,canvasRef)
+  const {drawRooms,drawWall,setAction,handleSelectDoorType,setCurrentPoint,setIsMultiMode, setStartPoint, drawWallPreview,handleMouseDown,handleMouseMove,handleMouseUp, setSelectedRoom,setNearNodePoint,walls,setRooms,action,selectedVertex,isMultiMode, hoverVertex,wallThickness,isPreview,nearNodePoint,currentPoint,selectedRoom, startPoint,placedObjects,rooms,binderRef,binderVersion} = useFloorPlanZones(ctxRef.current,canvasRef)
   // Initialize canvas
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -32,7 +32,7 @@ export const FloorPlanEditor = () => {
     if(binderRef.current && isPreview){
       binderRef.current.draw(ctxRef.current,true)
     }
-  }, [walls, rooms, mode, action, startPoint, currentPoint, nearNodePoint,binderVersion,isPreview,placedObjects]);
+  }, [walls, rooms, action, startPoint, currentPoint, nearNodePoint,binderVersion,isPreview,placedObjects]);
 
 
 
