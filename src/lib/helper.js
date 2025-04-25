@@ -405,7 +405,7 @@ export function junctionList(WALLS) {
       Math.pow(vertex.y - point.y, 2)
     );
     
-    console.log(distance)
+    // console.log(distance)
     if (distance < threshold) {
       return vertex;
     }

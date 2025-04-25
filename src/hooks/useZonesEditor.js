@@ -30,12 +30,12 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
   const [roomData, setRoomData] = useState([]);
   
   
-  console.log("wallls",walls,rooms)
+  // console.log("wallls",walls,rooms)
 
 
     useEffect(() => {
       if (walls.length > 0 && (tool == "partition" || tool =="select")) {
-        console.log("OUIIIIIIIIIIIII",tool,walls,selectedRoom)
+        // console.log("OUIIIIIIIIIIIII",tool,walls,selectedRoom)
         if(selectedRoom == null){
         const roomsResult = polygonize(walls);
         setRooms(roomsResult);
@@ -473,7 +473,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
 
   const handleMouseDown = (event)=>{
     const point = getCanvasPoint(event);
-        console.log("mode issssssss",tool,action)
+        // console.log("mode issssssss",tool,action)
         if (tool === 'select') {
           const vertex = nearVertex(walls,point,10)
           if(vertex){
@@ -531,7 +531,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
         });
         return 
       }else{
-        console.log("dkhall hna rooms",rooms.length)
+        // console.log("dkhall hna rooms",rooms.length)
         if(rooms.polygons){   
         const roomId = findRoomAtPoint(rooms,point);
           if (roomId !== null) {
@@ -582,7 +582,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
         const snap = calculateSnapPoint(walls,point);
         
         if (action === 0) {
-          console.log("dkhall hna salam ")
+          // console.log("dkhall hna salam ")
           // Start drawing a new wall
           setStartPoint(snap);
           setAction(1);
@@ -594,7 +594,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
 
   // mouse move function 
    const handleMouseMove = (event) => {
-    console.log("caled rom mouse move ...",tool)
+    // console.log("caled rom mouse move ...",tool)
       if(tool!="door_mode"){
         binderRef.current
         =null
@@ -607,7 +607,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
       }
         // mouse move without dragging 
         if(tool=="select"){
-          console.log("select is .........",dragState,tool)
+          // console.log("select is .........",dragState,tool)
           const vertex = nearVertex(walls,point,10);
           if (vertex) {
             setHoverVertex(vertex);
@@ -705,7 +705,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
 
     // mouse up event 
     const handleMouseUp = (event) => {
-      console.log("hnaaaaaaaaaaaaaa999",)
+      // console.log("hnaaaaaaaaaaaaaa999",)
     if(tool=="select"){
       
       if (isDraggingVertex) {
@@ -734,7 +734,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
         }
     };
   
-    console.log(walls)
+    // console.log(walls)
   
     const onCancelUpdate=()=>{
       setSelectedRoom(null)

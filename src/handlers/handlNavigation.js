@@ -101,8 +101,8 @@ const calculatePath = (start, end, setCurrentPath, walls, doors) => {
     const cellSize = 10; // Par exemple, 10 pixels par cellule
     
     // Récupérer les dimensions de votre espace
-    const width = 1500; // À remplacer par la largeur de votre plan
-    const height = 1500; // À remplacer par la hauteur de votre plan
+    const width = 2000; // À remplacer par la largeur de votre plan
+    const height = 2000; // À remplacer par la hauteur de votre plan
     
     // Créer la grille
     const grid = createGrid(width, height, cellSize, walls, doors);

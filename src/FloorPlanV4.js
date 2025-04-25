@@ -126,9 +126,12 @@ const FloorPlanV4 = () => {
     // Set initial canvas size
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
-
+    console.log("Objets chargés :", pois);
+        // console.log("Portes chargées :", doors);
+        // console.log("Fenêtres chargées :", windows);
+        console.log("wall chargées :", walls);
     drawCanvas()
-  },[])
+  },[setWalls])
 
 
 
@@ -257,7 +260,7 @@ const FloorPlanV4 = () => {
  
 
   const handleMouseDown = (e) => {
-    console.log("called ",tool)
+    // console.log("called ",tool)
     const canvas = canvasRef.current;
     const mousePos = getMousePos(canvas, e, offset, scale);
     handleObjectDrag(e, pois, setDraggingId, setOffset, offset, scale);
@@ -451,7 +454,7 @@ const FloorPlanV4 = () => {
    const handleGeoJSONUploadSystem = async (event) => {
     const file = event.target.files[0];
     if (file) {
-      const success = await GeoJsonManipulation.loadFloorPlanFromFileSysteme(file,setWalls, setPois,setDoors,setWindows,setJsonData,setImageInfo,setScale,setOffset,canvasSize);
+      const success = await GeoJsonManipulation.loadFloorPlanFromFileSysteme(file,setWalls, setPois,setDoors,setWindows,setJsonData,setImageInfo,setScale,setOffset,canvasSize,setZones,setRooms,setCanvasSize);
       if (success) {
         console.log("Plan d'étage chargé avec succès");
         // Réinitialiser le chemin actuel et les points de navigation
@@ -462,6 +465,7 @@ const FloorPlanV4 = () => {
         console.error("Échec du chargement du plan d'étage");
       }
     }
+
   };
 
   const handleNameChange = (e) => {
@@ -581,7 +585,17 @@ const FloorPlanV4 = () => {
           </button>
           <button 
             className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
-            onClick={ ()=> GeoJsonManipulation.exportToGeoJSON(walls, pois, doors, windows)}
+            onClick={ ()=> {
+              console.log("-------------------------Exporting to GeoJSON...-------------------");
+              // console.log("Zones chargées :", zones);
+              // console.log("Pièces chargées :", rooms);
+              console.log("Objets chargés :", pois);
+              // console.log("Portes chargées :", doors);
+              // console.log("Fenêtres chargées :", windows);
+              console.log("wall chargées :", walls);
+              GeoJsonManipulation.exportToGeoJSON(walls, pois, doors, windows, zones, rooms,scale,offset,canvasSize)
+            }
+         }
           >
             Exporter
           </button>
@@ -773,32 +787,40 @@ const FloorPlanV4 = () => {
 
         </div>
 
-        <div className="flex-1 flex flex-col">
-          <div 
-            ref={canvasContainerRef} 
-            className="flex-1 overflow-hidden relative"
-            onWheel={handleWheel}
-            onClick={handleCanvasClick}
-          >
-            <canvas
-              ref={canvasRef}
-              width={canvasSize.width}
-              height={canvasSize.height}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
-              className="absolute top-0 left-0 w-full h-full"
-              style={{ 
-                cursor: 
-                  nearNodePoint ? 'grab' : 
-                  (mode === 'line' || mode === 'partition') ? 'crosshair' : 'default' 
-              }}
-            />
-          </div>
+        <div className="flex-1 overflow-auto relative">
+  <div
+    style={{
+      width: 2000,
+      height: 2000,
+      position: 'relative',
+    }}
+  >
+    <canvas
+      ref={canvasRef}
+      width={canvasSize.width}
+      height={canvasSize.height}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      className="cursor-default"
+      style={{
+        display: 'block',
+        width: '100%',
+        height: '100%',
+        cursor:
+          nearNodePoint
+            ? 'grab'
+            : tool === 'wall' || tool === 'partition'
+            ? 'crosshair'
+            : 'default',
+      }}
+    />
+  </div>
+</div>
+
 
           
-        </div>
       </div>
       {showPoiForm && (
   <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
