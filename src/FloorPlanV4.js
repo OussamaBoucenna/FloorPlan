@@ -16,6 +16,9 @@ import {handleErase,handleDrawingEnd,isNearPoint } from './handlers/handleErase'
 import {useFloorPlanZones} from "./hooks/useZonesEditor"
 import { useZones } from './hooks/useZones';
 import  {DeleteWallButton} from "./components/deleteWallBtn"
+import {DeleteObjectButton} from "./components/deleteObjectBtn"
+import {TemplateModal} from "./components/templateModalComponent"
+
 const FloorPlanV4 = () => {
 
   // Icons for different categories
@@ -27,7 +30,8 @@ const FloorPlanV4 = () => {
   };
 
 
-  
+
+  const [isTemplateModalOpen,setIsTemplateModalOpen]=useState(true)
   const [showPoiForm, setShowPoiForm] = useState(false);
   const [poiName, setPoiName] = useState('');
   const [poiCategory, setPoiCategory] = useState('');
@@ -35,7 +39,7 @@ const FloorPlanV4 = () => {
   const [draggingId, setDraggingId] = useState(null);
   const [selectedPOI, setSelectedPOI] = useState(null);
   const [newPoiName, setNewPoiName] = useState(""); // Pour stocker le nouveau nom
-  const [tool, setTool] = useState('wall');
+  const [tool, setTool] = useState('select');
   const [pois, setPois] = useState([]);
   const [doors, setDoors] = useState([]);
   const [currentWall, setCurrentWall] = useState(null);
@@ -67,6 +71,7 @@ const FloorPlanV4 = () => {
     setTool(tool)
   }
 
+
   // import useZoneEditor Hook
   const {
     drawRooms,
@@ -93,7 +98,10 @@ const FloorPlanV4 = () => {
     action,
     hoverVertex,
     getCanvasPoint,
+    selectedObject,
+    deleteObject,
     selectedRoom,
+    generateWallsTemplate,
     binderRef,
     binderVersion,
     nearNodePoint,
@@ -152,6 +160,10 @@ const FloorPlanV4 = () => {
     };
   }, [zoneDrawingMode, setDrawingZoneMode, setCurrentZonePoints]);
 
+
+
+  console.log("placedObjects ",placedObjects)
+
   const handleDoubleClick = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -207,15 +219,40 @@ const FloorPlanV4 = () => {
     drawRooms(ctx);
     drawWalls(ctx);
       if(placedObjects && placedObjects.length){
-        placedObjects.forEach(object => {
+        placedObjects.forEach((object,index) => {
           object.draw(ctxRef.current)
+          const isSelected =  index === selectedObject;
+   // console.log("isSelected ",isSelected)
+    if (isSelected) {
+      ctx.strokeStyle = '#4285F4';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      
+      // Determine object bounds to highlight
+      let x, y, width, height;
+      if (object.width && object.height) {
+        x = object.x - object.width / 2;
+        y = object.y - object.height / 2;
+        width = object.width;
+        height = object.height;
+      } else {
+        // Fallback for objects without explicit dimensions
+        x = object.x - 40;
+        y = object.y - 40;
+        width = 80;
+        height = 80;
+      }
+      
+      // Draw selection box
+      ctx.strokeRect(x - 5, y - 5, width + 10, height + 10);
+      ctx.setLineDash([]);
+    }
         })
       }
 
       if (typeof drawAllZones === 'function') {
         drawAllZones(ctx);
       }
-      //console.log("dkhalllllllll",zoneDrawingMode,currentZonePoints,currentPoint)
       if (zoneDrawingMode && currentZonePoints.length && currentPoint) {
         drawZonePreview(ctx, currentZonePoints[0], currentPoint);
       }
@@ -291,7 +328,7 @@ const FloorPlanV4 = () => {
     // draw zones 
     //drawZones(ctx,scale,zones,isDrawing,selectedItem,currentZone,currentPolygonPoints,zoneShapeType)
     ctx.restore();
-  }, [walls, rooms,currentZonePoints,zoneDrawingMode, pois, doors,zones, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, tool,action,startPoint,currentPoint,nearNodePoint,binderRef,binderVersion,isPreview,placedObjects]);
+  }, [walls, rooms,selectedObject, currentZonePoints,zoneDrawingMode, pois, doors,zones, windows, currentWall, currentWindow, currentRoom, isDrawing, scale, offset, selectedItem, pathPoints, currentPath, tool,action,startPoint,currentPoint,nearNodePoint,binderRef,binderVersion,isPreview,placedObjects]);
   
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -522,10 +559,11 @@ const FloorPlanV4 = () => {
                 setSelectedItem(null);
                 setPathPoints({ start: null, end: null });
                 setCurrentPath([]);
+                setIsTemplateModalOpen(true)
               }
             }}
           >
-            Nouveau
+            New From Template
           </button>
           <button 
             className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
@@ -759,6 +797,12 @@ const FloorPlanV4 = () => {
   <DeleteWallButton wallId={selectedWallId} onDelete={deleteWall} />
 )}
 
+{selectedObject!==null && (
+  <DeleteObjectButton 
+    object={selectedObject} 
+    onDelete={deleteObject} 
+  />
+)}
 <WallLengthPopup
       visible={wallLengthPopup.visible}
       x={wallLengthPopup.x}
@@ -835,6 +879,20 @@ const FloorPlanV4 = () => {
         </div>
       </div>
     )}
+
+<TemplateModal
+  isOpen={isTemplateModalOpen}
+  onClose={() => setIsTemplateModalOpen(false)}
+  onTemplateSelect={(template) => {
+    if(template=="blank"){
+      setIsTemplateModalOpen(false)
+      return
+    }
+  }}
+  onDimensionsConfirm={(template, dimensions) => {
+    generateWallsTemplate(template, dimensions);
+  }}
+/>
     </div>
   );
 };

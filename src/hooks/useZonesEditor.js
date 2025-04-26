@@ -5,10 +5,14 @@ import { almostEqual, nearVertex } from '../lib/helper';
 import { calculateSnapPoint, findRoomAtPoint, getRoomCenter, isPointsEqual } from '../lib/utils';
 import Obj2D from '../lib/editor';
 import { displayMeasurements } from '../Draw';
+import { generateTemplateWalls } from '../lib/editor';
 export const useFloorPlanZones=(canvasRef,tool,onChangeTool)=>{
   const [walls,setWalls]=useState([])
   const [modeOption,setModeOption]=useState("")
   const [placedObjects,setPlacedObjects]=useState([])
+  const [movingObject,setMovingObject]=useState(false)
+  // declare selected object for deletion 
+  const [selectedObject,setSelectedObject]=useState(null)
   const [isPreview,setIsPreview]=useState(true)
   const [roomProps,setRoomPropsPanel]=useState({})
   const binderRef = useRef(null)
@@ -35,17 +39,28 @@ export const useFloorPlanZones=(canvasRef,tool,onChangeTool)=>{
   });
   // Define a palette of colors for rooms
   const roomColorPalette = [
-    '#f0daaf', // Beige
-    '#d3e4ff', // Light Blue
-    '#e0f0d0', // Light Green
-    '#f1e2f1', // Light Purple
-    '#ffe0e0', // Light Pink
-    '#e6f2f2', // Light Cyan
-    '#fff4e0', // Light Peach
-    '#e6e6fa', // Lavender
-    '#ffead7', // Light Orange
-    '#e0f2e0'  // Mint Green
+    '#f0daaf',
+    '#d3e4ff',
+    '#e0f0d0',
+    '#f1e2f1',
+    '#ffe0e0',
+    '#e6f2f2',
+    '#fff4e0',
+    '#ffead7',
+    '#e0f2e0'
   ];
+
+
+  const generateWallsTemplate=(template,dimensions)=>{
+    const canvasDimensions = {
+      width : canvasRef.current.width,
+      height: canvasRef.current.height
+    }
+    const generatedWalls = generateTemplateWalls(template,dimensions,canvasDimensions)
+    setWalls(generatedWalls)
+  }
+
+
 
   const assignRoomColors = (polygons) => {
     if (!polygons || polygons.length === 0) return {};
@@ -127,10 +142,7 @@ const deleteWall = (wallId) => {
     wallId: idx
   }));
   
-  // Update object references to walls
   const updatedObjectsWithCorrectIds = updatedObjects.map(obj => {
-    // If the object's wall index was higher than the deleted wall,
-    // decrement its wallId by 1
     if (obj.wallId > wallId) {
       return {
         ...obj,
@@ -143,10 +155,8 @@ const deleteWall = (wallId) => {
   setWalls(reindexedWalls);
   setPlacedObjects(updatedObjectsWithCorrectIds);
   
-  // Clear selection state
   setSelectedWallId(null);
   
-  // Recalculate rooms
   const updatedRooms = polygonize(reindexedWalls);
   setRooms(updatedRooms);
   setWallLengthPopup(prev => ({...prev,visible:false}))
@@ -542,10 +552,27 @@ const deleteWall = (wallId) => {
       newWalls.forEach(wall=>updateWallObjects(wall,wall,point))
     };
 
+    const deleteObject= (objectId)=>{
+      if (objectId==null) return;
+  
+  // Filter out the object with the given ID
+  console.log("DELETE OBJECT",objectId,placedObjects)
+  placedObjects.forEach((obj,idx) => {
+    console.log("DELETE OBJECT",obj.id,idx)
+  })
+  const updatedObjects = placedObjects.filter((obj,index) => objectId != index);
+  
+  // Update state
+  console.log("UPDATE OBJECTS",updatedObjects)
+  setPlacedObjects(updatedObjects);
+  setSelectedObject(null);
+    }
   const updateRoomsForWalls=(currentWalls)=>{
     const roomsResult = polygonize(currentWalls);
     setRooms(roomsResult);
   }
+
+  console.log("placeObjcets",placedObjects)
 
   const finishWall = (type) => {
     if (!startPoint || !currentPoint) return;
@@ -606,6 +633,13 @@ const deleteWall = (wallId) => {
           }
           const objectTarget = findObjectUnderCursor(point)
           if(objectTarget && (objectTarget.class == "doorWindow" || objectTarget.family == "inWall")){
+            // clear previous selection 
+            setSelectedWallId(null)
+            if(selectedRoom) setSelectedRoom(null)
+
+              // set this object as selected 
+              const objectIndex = placedObjects.indexOf(objectTarget)
+              setSelectedObject(objectIndex)
             setDragState({
               type: 'doorWindow',
               id: objectTarget.id,
@@ -622,10 +656,12 @@ const deleteWall = (wallId) => {
           binderRef.current = objectTarget;
         }
         onChangeTool("door_mode")
+        setMovingObject(true)
         setIsPreview(true)
         setBinderVersion(prev => prev + 1)
         return 
           }
+          setSelectedObject(null)
           const wallInfo = nearWall(point, 6,walls);
           const {wall,wallId}=wallInfo
         if (wall) {
@@ -851,10 +887,14 @@ const deleteWall = (wallId) => {
     setDragState(null)}
       else if ((tool === 'wall' || tool === 'partition') && action === 1) {
         finishWall(tool);
-      }else if(tool=="door_mode" && binderRef.current){
+      }else if(tool=="door_mode" && binderRef.current && !movingObject){
         setPlacedObjects(prevObjects => [...prevObjects, new Object(binderRef.current)]);
         setIsPreview(false);
        onChangeTool("select");
+        }else if(tool=="door_mode" && binderRef.current && movingObject){
+          setIsPreview(false);
+       onChangeTool("select");
+       setMovingObject(false)
         }
     };
   
@@ -902,6 +942,9 @@ const deleteWall = (wallId) => {
   cancelWallLengthPopup,
   applyWallLength,
   selectedWallId,
-  deleteWall
+  deleteWall,
+  selectedObject,
+  deleteObject,
+  generateWallsTemplate
   };
 }

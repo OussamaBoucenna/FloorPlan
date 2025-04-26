@@ -692,3 +692,118 @@ drawDoubleDoor(ctx, halfSize, halfThick, isPreview, arcBgColor = null, arcStroke
     console.log("Updated bbox:", bbox);
   }
 }
+
+
+export const generateTemplateWalls = (template,dimensions,canvasDimension)=>{
+  // Convert meters to pixels
+  const pixelsPerMeter = 100;
+  const width = dimensions.width * pixelsPerMeter;
+  const height = dimensions.height * pixelsPerMeter;
+  const extension = dimensions.extension * pixelsPerMeter;
+  
+  // Start position (centered on canvas)
+  const canvasWidth = canvasDimension.width;
+  const canvasHeight = canvasDimension.height;
+  const startX = (canvasWidth - width) / 2;
+  const startY = (canvasHeight - height) / 2;
+  
+  let newWalls = [];
+  
+  switch(template) {
+    case 'rectangle':
+      // Create four walls for rectangle
+      newWalls = [
+        // Top wall
+        {
+          start: { x: startX, y: startY },
+          end: { x: startX + width, y: startY },
+          type: 'wall',
+          wallId: 0,
+          thickness: 10
+        },
+        // Right wall
+        {
+          start: { x: startX + width, y: startY },
+          end: { x: startX + width, y: startY + height },
+          type: 'wall',
+          wallId: 1,
+          thickness: 10
+        },
+        // Bottom wall
+        {
+          start: { x: startX + width, y: startY + height },
+          end: { x: startX, y: startY + height },
+          type: 'wall',
+          wallId: 2,
+          thickness: 10
+        },
+        // Left wall
+        {
+          start: { x: startX, y: startY + height },
+          end: { x: startX, y: startY },
+          type: 'wall',
+          wallId: 3,
+          thickness: 10
+        }
+      ];
+      break;
+      case 'lshape':
+      // Create 6 walls for L-shape
+      newWalls = [
+        // Top horizontal wall
+        {
+          start: { x: startX, y: startY },
+          end: { x: startX + width, y: startY },
+          type: 'wall',
+          wallId: 0,
+          thickness: 10
+        },
+        // Right top vertical wall
+        {
+          start: { x: startX + width, y: startY },
+          end: { x: startX + width, y: startY + (height - extension) },
+          type: 'wall',
+          wallId: 1,
+          thickness: 10
+        },
+        // Middle horizontal wall
+        {
+          start: { x: startX + width, y: startY + (height - extension) },
+          end: { x: startX + (width - extension), y: startY + (height - extension) },
+          type: 'wall',
+          wallId: 2,
+          thickness: 10
+        },
+        // Right bottom vertical wall
+        {
+          start: { x: startX + (width - extension), y: startY + (height - extension) },
+          end: { x: startX + (width - extension), y: startY + height },
+          type: 'wall',
+          wallId: 3,
+          thickness: 10
+        },
+        // Bottom horizontal wall
+        {
+          start: { x: startX + (width - extension), y: startY + height },
+          end: { x: startX, y: startY + height },
+          type: 'wall',
+          wallId: 4,
+          thickness: 10
+        },
+        // Left vertical wall
+        {
+          start: { x: startX, y: startY + height },
+          end: { x: startX, y: startY },
+          type: 'wall',
+          wallId: 5,
+          thickness: 10
+        }
+      ];
+      break;
+      case 'blank':
+    default:
+      // No walls for blank template
+      break;
+  }
+  return newWalls;
+};
