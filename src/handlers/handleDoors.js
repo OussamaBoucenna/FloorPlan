@@ -35,6 +35,7 @@ export const drawDoors = (ctx, doors, selectedItem) => {
   };
 
   export const handleDoor = (mousePos, selectedItem, walls, calculateDoorPosition, doors, setDoors) => {
+    console.log("mouse pos in door", selectedItem)
     if (selectedItem?.type === 'wall') {
       const wall = walls.find(w => w.id === selectedItem.id);
       if (wall) {
@@ -46,6 +47,7 @@ export const drawDoors = (ctx, doors, selectedItem) => {
             end: doorPosition.end,
             wallId: wall.id
           };
+          console.log("new door rew dar doors ---->", newDoor)
           setDoors([...doors, newDoor]);
         }
       }

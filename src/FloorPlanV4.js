@@ -265,6 +265,7 @@ const FloorPlanV4 = () => {
     handleObjectDrag(e, pois, setDraggingId, setOffset, offset, scale);
     handlePan(e, setIsDragging, setDragStart, offset, tool);
     mouseDown(e,tool)
+    console.log("tool in mouse down",tool)
     switch (tool) {
       case 'path':
         handlePath(mousePos, pathPoints, setPathPoints, setCurrentPath, walls, doors);
@@ -274,7 +275,8 @@ const FloorPlanV4 = () => {
        // const item = findItemAt(mousePos,doors,pois,zones,walls,rooms);
         //setSelectedItem(item);
         break;
-      case 'door':
+      case 'door_mode':
+        console.log("door mode TOOOOOOOOOOOOOOOOLLLLLLLLLLLLL")
         handleDoor(mousePos, selectedItem, walls, calculateDoorPosition, doors, setDoors);
         break;
       case 'erase':
@@ -586,11 +588,11 @@ const FloorPlanV4 = () => {
             className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
             onClick={ ()=> {
               console.log("-------------------------Exporting to GeoJSON...-------------------");
-              // console.log("Zones chargées :", zones);
-              // console.log("Pièces chargées :", rooms);
+               console.log("Zones chargées :", zones);
+               console.log("Pièces chargées :", rooms);
               console.log("Objets chargés :", pois);
-              // console.log("Portes chargées :", doors);
-              // console.log("Fenêtres chargées :", windows);
+             console.log("Portes chargées :", doors);
+               console.log("Fenêtres chargées :", windows);
               console.log("wall chargées :", walls);
               GeoJsonManipulation.exportToGeoJSON(walls, pois, doors, windows, zones, rooms,scale,offset,canvasSize)
             }
@@ -792,7 +794,9 @@ const FloorPlanV4 = () => {
       width: 2000,
       height: 2000,
       position: 'relative',
+       border: '2px solid #333'
     }}
+    onClick={handleCanvasClick}
   >
     <canvas
       ref={canvasRef}

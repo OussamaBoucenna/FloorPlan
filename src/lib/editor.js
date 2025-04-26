@@ -169,7 +169,7 @@ export default class Obj2D {
     // Use specialized drawing based on type
     switch(this.type) {
       case 'doorSingle':
-        console.log("called here ....",this.type)
+       // console.log("called here ....",this.type)
         this.drawSingleDoor(ctx, halfSize, halfThick, isPreview,"#7EBDC2","#7EBDC2");
         break;
       case 'doorDouble':
@@ -653,7 +653,7 @@ drawDoubleDoor(ctx, halfSize, halfThick, isPreview, arcBgColor = null, arcStroke
     
     // Update visual paths
     this.paths = carpentryCalc(this.class, this.type, this.size, this.thick, this.value);
-    console.log("ici  ",this.x,this.y)
+   // console.log("ici  ",this.x,this.y)
     // Calculate new bounding box
     this.calculateBoundingBox();
     return true;

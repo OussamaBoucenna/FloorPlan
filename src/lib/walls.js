@@ -241,8 +241,8 @@ export const isPointNearWall=(point, walls, threshold = 15)=> {
     };
     
     const distance = perpDistance(point, line);
-    console.log("distance",distance)
-    console.log("threshold",isPointOnWallSegment(point, wall))
+  //  console.log("distance",distance)
+   // console.log("threshold",isPointOnWallSegment(point, wall))
     // Check if point is close enough and between the wall's endpoints
     if (distance <= threshold && isPointOnWallSegment(point, wall)) {
       // Return the wall and projected point
@@ -278,7 +278,7 @@ export const perpDistance=(point, line)=>{
 
 // Check if point projection lies on the wall segment
 export const isPointOnWallSegment=(point, wall)=>{
-  console.log("point",wall,point)
+ // console.log("point",wall,point)
     if(!wall) return false
     if(!point) return false 
     if(wall.start.x == wall.end.x) return utils.btwn(point.y, wall.start.y, wall.end.y) && utils.btwn(point.x, wall.start.x - 10, wall.end.x + 10)
