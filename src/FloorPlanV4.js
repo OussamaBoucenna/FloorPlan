@@ -103,6 +103,7 @@ const FloorPlanV4 = () => {
     applyWallLength,
     mode,
     placedObjects,
+    setPlacedObjects,
     action,
     hoverVertex,
     selectedRoom,
@@ -129,10 +130,7 @@ const FloorPlanV4 = () => {
     // Set initial canvas size
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
-    console.log("Objets chargés :", pois);
-        // console.log("Portes chargées :", doors);
-        // console.log("Fenêtres chargées :", windows);
-        console.log("wall chargées :", walls);
+    
     drawCanvas()
   },[setWalls])
 
@@ -455,7 +453,7 @@ const FloorPlanV4 = () => {
    const handleGeoJSONUploadSystem = async (event) => {
     const file = event.target.files[0];
     if (file) {
-      const success = await GeoJsonManipulation.loadFloorPlanFromFileSysteme(file,setWalls, setPois,setDoors,setWindows,setJsonData,setImageInfo,setScale,setOffset,canvasSize,setZones,setRooms,setCanvasSize);
+      const success = await GeoJsonManipulation.loadFloorPlanFromFileSysteme(file,setWalls, setPois,setDoors,setWindows,setJsonData,setImageInfo,setScale,setOffset,canvasSize,setZones,setRooms,setCanvasSize,setPlacedObjects);
       if (success) {
         console.log("Plan d'étage chargé avec succès");
         // Réinitialiser le chemin actuel et les points de navigation
@@ -588,13 +586,13 @@ const FloorPlanV4 = () => {
             className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
             onClick={ ()=> {
               console.log("-------------------------Exporting to GeoJSON...-------------------");
-               console.log("Zones chargées :", zones);
+              //  console.log("Zones chargées :", zones);
                console.log("Pièces chargées :", rooms);
               console.log("Objets chargés :", pois);
-             console.log("Portes chargées :", doors);
-               console.log("Fenêtres chargées :", windows);
+             console.log("Portes chargées :", placedObjects);
+              //  console.log("Fenêtres chargées :", windows);
               console.log("wall chargées :", walls);
-              GeoJsonManipulation.exportToGeoJSON(walls, pois, doors, windows, zones, rooms,scale,offset,canvasSize)
+              GeoJsonManipulation.exportToGeoJSON(walls, pois, doors, windows, zones, rooms,scale,offset,canvasSize,placedObjects)
             }
          }
           >

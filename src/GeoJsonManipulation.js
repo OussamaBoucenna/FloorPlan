@@ -1,96 +1,9 @@
-// const exportToGeoJSON = (walls, pois, doors, windows, zones, rooms,scale,offset,canvasSize) => {
-//   const geoJSONData = {
-//     "type": "FeatureCollection",
-//     "features": []
-//   };
-  
-//  // Exporter les murs
-//  if (walls && walls.length > 0) {
-//   walls.forEach((wall, index) => {
-//     // Extraire les points de départ et d'arrivée en gérant le cas où start contient une référence wall
-//     const start = wall.start && wall.start.wall ? 
-//       { x: wall.start.x, y: wall.start.y } : wall.start;
-    
-//     const wallFeature = {
-//       "type": "Feature",
-//       "id": index + 1,
-//       "geometry": {
-//         "type": "LineString",
-//         "coordinates": [
-//           [start.x, start.y],
-//           [wall.end.x, wall.end.y]
-//         ]
-//       },
-//       "properties": {
-//         "class_name": "wall",
-//         "thickness": wall.thickness || 12,
-//         "wallId": wall.wallId !== undefined ? wall.wallId : index,
-//         "length": Math.sqrt(
-//           Math.pow(wall.end.x - start.x, 2) + 
-//           Math.pow(wall.end.y - start.y, 2)
-//         )
-//       }
-//     };
-    
-//     geoJSONData.features.push(wallFeature);
-//   });
-// }
-  
-//   // Exporter les POI
-//   if (pois && pois.length > 0) {
-//     pois.forEach((poi, index) => {
-//       const poiFeature = {
-//         "type": "Feature",
-//         "id": `poi-${index + 1}`,
-//         "geometry": {
-//           "type": "Point",
-//           "coordinates": [poi.x, poi.y]
-//         },
-//         "properties": {
-//           "class_name": "poi",
-//           "name": poi.name || `POI ${index + 1}`,
-//           "type": poi.category || "default",
-//           "description": poi.description || "",
-//           "icon": poi.icon || null,
-//           "width": poi.width || 50,
-//           "height": poi.height || 50,
-//           "original_id": poi.id
-//         }
-//       };
-      
-//       geoJSONData.features.push(poiFeature);
-//     });
-//   }
-  
-  
-//   // Métadonnées (échelle, décalage, etc.)
-//   geoJSONData.metadata = {
-//     "scale": scale || 1,
-//     "offset": offset || { x: 0, y: 0 },
-//     "canvasSize": canvasSize || { width: 800, height: 600 }
-    
-//   };
-  
-//    // Créer et télécharger le fichier GeoJSON
-//    const jsonStr = JSON.stringify(geoJSONData, null, 2);
-//    const blob = new Blob([jsonStr], { type: 'application/geo+json' });
-//    const url = URL.createObjectURL(blob);
-       
-//    const a = document.createElement('a');
-//    a.href = url;
-//    a.download = 'indoor_mapping.geojson';
-//    document.body.appendChild(a);
-//    a.click();
-//    document.body.removeChild(a);
-//    URL.revokeObjectURL(url);
-       
-//    console.log("Floor plan exported successfully");
-//    return jsonStr
-// };
+import { set } from "lodash";
+
+import Obj2D from "./lib/editor"
 
 
-
-const exportToGeoJSON = (walls, pois, doors, windows, zones, rooms, scale, offset, canvasSize) => {
+const exportToGeoJSON = (walls, pois, doors, windows, zones, rooms, scale, offset, canvasSize,placedObject) => {
   const geoJSONData = {
     "type": "FeatureCollection",
     "features": []
@@ -128,6 +41,59 @@ const exportToGeoJSON = (walls, pois, doors, windows, zones, rooms, scale, offse
       geoJSONData.features.push(wallFeature);
     });
   }
+
+   // Exporter les portes et fenêtres depuis placedObject
+   if (placedObject && placedObject.length > 0) {
+    placedObject.forEach((obj, index) => {
+      // Vérifier si l'objet est une porte ou une fenêtre basé sur la classe et le type
+      const isDoorWindow = obj.class === "doorWindow";
+      const isDoor = isDoorWindow && obj.type && obj.type.toLowerCase().includes('door');
+      const isWindow = isDoorWindow && obj.type && obj.type.toLowerCase().includes('window');
+      
+      if (isDoor || isWindow) {
+        // Créer un point GeoJSON pour l'objet
+        const feature = {
+          "type": "Feature",
+          "id": `${isDoor ? 'door' : 'window'}-${index + 1}`,
+          "geometry": {
+            "type": "Point",
+            "coordinates": [obj.x, obj.y]
+          },
+          "properties": {
+            "class_name": isDoor ? "door" : "window",
+            "family": obj.family || "inWall",
+            "type": obj.type || (isDoor ? "doorSingle" : "windowSingle"),
+            "angle": obj.angle || 0,
+            "angleSign": obj.angleSign !== undefined ? obj.angleSign : (isDoor ? 1 : 0),
+            "hinge": obj.hinge || "normal",
+            "size": obj.size || 60,
+            "thick": obj.thick || 10,
+            "width": obj.width || "1.00",
+            "height": obj.height || "0.17",
+            "wallId": obj.wallId !== undefined ? obj.wallId : null,
+            "original_id": index
+          }
+        };
+        
+        // Si l'objet a des chemins SVG (paths), les ajouter aux propriétés
+        if (obj.paths && obj.paths.length > 0) {
+          feature.properties.paths = JSON.stringify(obj.paths);
+        }
+        
+        // Si l'objet a une référence au mur, ajouter des informations sur le mur
+        if (obj.wall) {
+          feature.properties.wall_info = JSON.stringify({
+            wallId: obj.wall.wallId,
+            thickness: obj.wall.thickness,
+            type: obj.wall.type
+          });
+        }
+        
+        geoJSONData.features.push(feature);
+      }
+    });
+  }
+  
   
   // Exporter les pièces (rooms)
   if (rooms) {
@@ -388,7 +354,7 @@ const exportToGeoJSON = (walls, pois, doors, windows, zones, rooms, scale, offse
 
 
 
-const importFromGeoJSON = (jsonData, setWalls, setPois, setDoors, setWindows, setZones, setRooms, setScale, setOffset, setCanvasSize) => {
+const importFromGeoJSON = (jsonData, setWalls, setPois, setDoors, setWindows, setZones, setRooms, setScale, setOffset, setCanvasSize,setPlacedObjects) => {
   try {
     // Code existant...
     
@@ -398,6 +364,8 @@ const importFromGeoJSON = (jsonData, setWalls, setPois, setDoors, setWindows, se
     const newDoors = [];
     const newWindows = [];
     const newZones = [];
+    const newPlacedObjects = [];
+
     const newRooms = { polygons: [], vertex: [] };
     
     // Traitement des features
@@ -507,7 +475,88 @@ const importFromGeoJSON = (jsonData, setWalls, setPois, setDoors, setWindows, se
           };
           
           newPOIs.push(poi);
-        }
+        } // Traitement des portes et fenêtres (placedObjects)
+        // Traitement des portes et fenêtres (placedObjects)
+        else if ((className === "door" || className === "window") && feature.geometry.type === "Point") {
+          const coords = feature.geometry.coordinates;
+          
+          // Validation des coordonnées
+          if (!coords || coords.length < 2) {
+            console.warn(`Coordonnées de ${className} invalides`, feature);
+            return;
+          }
+          
+          const [x, y] = coords;
+          
+          // Au lieu de créer un objet simple, nous devons créer une instance Obj2D
+          // puisque la méthode "update" est attendue
+          const family = feature.properties.family || "inWall";
+          const type = feature.properties.type || (className === "door" ? "doorSingle" : "windowSingle");
+          const size = feature.properties.size || 60;
+          const thick = feature.properties.thick || 10;
+          const angle = feature.properties.angle || 0;
+          const angleSign = feature.properties.angleSign !== undefined ? feature.properties.angleSign : (className === "door" ? 1 : 0);
+          const hinge = feature.properties.hinge || "normal";
+          const wallId = feature.properties.wallId;
+          const value = feature.properties.value || 0;
+          const meter = feature.properties.meter || 60;
+          
+          // Créer une instance Obj2D
+          const obj = new Obj2D(
+            family,         // family
+            "doorWindow",   // classe
+            type,           // type
+            wallId,         // wallId
+            { x, y },       // pos
+            angle,          // angle
+            angleSign,      // angleSign
+            size,           // size
+            hinge,          // hinge
+            thick,          // thick
+            value,          // value
+            meter           // meter
+          );
+          
+          // Ajouter d'autres propriétés si nécessaire
+          obj.width = feature.properties.width || "1.00";
+          obj.height = feature.properties.height || "0.17";
+          obj.limit = [];
+          
+          // Traitement des paths s'ils existent
+          if (feature.properties.paths) {
+            try {
+              obj.paths = JSON.parse(feature.properties.paths);
+            } catch (e) {
+              console.warn(`Erreur lors du parsing des paths pour ${className}:`, e);
+              obj.paths = [];
+            }
+          }
+          
+          // Traitement des informations du mur associé s'ils existent
+          if (feature.properties.wall_info) {
+            try {
+              const wallInfo = JSON.parse(feature.properties.wall_info);
+              // Trouver le mur correspondant dans newWalls
+              const associatedWall = newWalls.find(w => w.wallId === wallInfo.wallId);
+              obj.wall = associatedWall || {
+                wallId: wallInfo.wallId,
+                thickness: wallInfo.thickness || 10,
+                type: wallInfo.type || "wall"
+              };
+            } catch (e) {
+              console.warn(`Erreur lors du parsing des infos du mur pour ${className}:`, e);
+            }
+          }
+          
+          // Ajouter l'objet à la collection appropriée
+          if (className === "door") {
+            newDoors.push(obj);
+          } else if (className === "window") {
+            newWindows.push(obj);
+          }
+          
+          // Ajouter à la collection globale de placedObjects
+          newPlacedObjects.push(obj);}
 
 
 
@@ -546,7 +595,8 @@ const importFromGeoJSON = (jsonData, setWalls, setPois, setDoors, setWindows, se
     if (setWindows) setWindows(newWindows);
     if (setZones) setZones(newZones);
     if (setRooms) setRooms(newRooms);
-    
+    if (setPlacedObjects) setPlacedObjects(newPlacedObjects);
+
     console.log("Import GeoJSON réussi");
     return true;
   } catch (error) {
@@ -614,7 +664,7 @@ const loadFloorPlanFromFileSysteme = async (file ,setWalls,
     canvasSize,
     setZones,
     setRooms,
-    setCanvasSize
+    setCanvasSize,setPlacedObjects
 ) => {
     try {
       const jsonText = await file.text();
@@ -627,7 +677,7 @@ const loadFloorPlanFromFileSysteme = async (file ,setWalls,
         setRooms,
         setScale,
         setOffset,
-        setCanvasSize);
+        setCanvasSize,setPlacedObjects);
       
       setJsonData(jsonText);
       

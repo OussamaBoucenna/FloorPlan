@@ -848,6 +848,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
     isMultiMode,
     walls,
     placedObjects,
+    setPlacedObjects,
     hoverVertex,
     rooms,   
     setSelectedRoom,
