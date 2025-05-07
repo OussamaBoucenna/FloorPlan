@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect,useCallback } from 'react';
 import { movePOI, stopDraggingPOI, zoomPOI , findClickedPOI, getCanvasClickPosition ,handPoi ,drawPOIs,handlePOI,handleObjectDrag, updatePOIProperties, POIEditForm } from './pois';
 import {updateCanvasSize} from './canvasUtils'
 import GeoJsonManipulation  from './GeoJsonManipulation';
@@ -25,6 +25,14 @@ const FloorPlanV4 = () => {
     default: "./logo.svg",
   };
 
+  // 1. Add these new state variables in the FloorPlanV4 component:
+  const [history, setHistory] = useState([]);
+  const [currentHistoryIndex, setCurrentHistoryIndex] = useState(-1);
+
+
+  // Add this near your other refs
+  const SCROLL_THRESHOLD = 20; // How close to border (px) to trigger scroll
+  const SCROLL_AMOUNT = 15; // How much to scroll each time
   // zones states variables 
   // start 
   const [zones, setZones] = useState([]);
@@ -64,7 +72,7 @@ const FloorPlanV4 = () => {
   const [imageInfo, setImageInfo] = useState(null);
   const { handlePoiTool, handleCreatePoi } = handPoi(
     tool, setTool, setShowPoiForm, 
-    poiName, setPoiName, 
+    poiName, setPoiName,  
     poiCategory, setPoiCategory,
     pendingPoi, setPendingPoi, 
     setPois, pois, categoryIcons,
@@ -134,6 +142,87 @@ const FloorPlanV4 = () => {
     drawCanvas()
   },[setWalls])
 
+  const saveToHistory = useCallback(() => {
+    // Create a deep copy of the current state
+    const currentState = {
+      walls: JSON.parse(JSON.stringify(walls)),
+      rooms: JSON.parse(JSON.stringify(rooms)),
+      pois: JSON.parse(JSON.stringify(pois)),
+      doors: JSON.parse(JSON.stringify(doors)),
+      windows: JSON.parse(JSON.stringify(windows)),
+      zones: JSON.parse(JSON.stringify(zones)),
+      placedObjects: placedObjects ? JSON.parse(JSON.stringify(placedObjects)) : []
+    };
+    console.log("saveToHistory",currentState)
+    // Only save if the state is different from the last saved state
+    if (currentHistoryIndex >= 0) {
+      const lastState = history[currentHistoryIndex];
+      if (JSON.stringify(lastState) === JSON.stringify(currentState)) {
+        return;
+      }
+    }
+  
+    // Truncate forward history if we've gone back and then made a new change
+    const newHistory = history.slice(0, currentHistoryIndex + 1);
+    console.log("jnjnj",newHistory)
+    setHistory([...newHistory, currentState]);
+    setCurrentHistoryIndex(newHistory.length);
+  }, [history, currentHistoryIndex, walls, rooms, pois, doors, windows, zones, placedObjects]);
+  
+
+  const undo = useCallback(() => {
+    if (currentHistoryIndex > 0) {
+      const prevState = history[currentHistoryIndex - 1];
+      console.log("currentHistoryIndex",history)
+      console.log("undo",prevState)
+      // Restore previous state
+      setWalls(prevState.walls);
+      setRooms(prevState.rooms);
+      setPois(prevState.pois);
+      setDoors(prevState.doors);
+      setWindows(prevState.windows);
+      setZones(prevState.zones);
+      
+      // Handle placedObjects if they exist in the history
+      if (prevState.placedObjects && setPlacedObjects) {
+        setPlacedObjects(prevState.placedObjects);
+      }
+      
+      setCurrentHistoryIndex(currentHistoryIndex - 1);
+      
+      // Clear any selected items or drawing state
+      setSelectedItem(null);
+      setCurrentWall(null);
+      setCurrentRoom([]);
+      setIsDrawing(false);
+      console.log("fiha history",walls)
+    }
+  }, [currentHistoryIndex, history]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Implement Ctrl+Z (or Cmd+Z on Mac)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        undo();
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [undo]);
+
+
+  useEffect(() => {
+    // Don't save on initial render
+    // if (currentHistoryIndex === -1 && walls.length === 0 && rooms.length === 0) {
+    //   // Initialize history with empty state
+    //   saveToHistory();
+    // } else if (currentHistoryIndex !== -1) {
+    //   // Save state when changes happen
+    //   saveToHistory();
+    // }
+  }, [walls, rooms, pois, doors, windows, zones, placedObjects]);
 
 
   // drawCanvas function 
@@ -299,6 +388,31 @@ const FloorPlanV4 = () => {
     const canvas = canvasRef.current;
     const mousePos = getMousePos(canvas, e, offset, scale);
     mouseMove(e,tool)
+    if (canvasContainerRef.current && !isDrawing) {
+      const containerRect = canvasContainerRef.current.getBoundingClientRect();
+      const mouseXInContainer = e.clientX - containerRect.left;
+      const mouseYInContainer = e.clientY - containerRect.top;
+      
+      // Check if mouse is near edges and scroll accordingly
+      if (mouseYInContainer > 450) {
+        canvasContainerRef.current.scrollTop += 5; // Scroll down
+        //console.log("scrolling down",canvasContainerRef.current.scrollTop)
+      } else if (mouseYInContainer < SCROLL_THRESHOLD) {
+        canvasContainerRef.current.scrollTop -= 5; // Scroll up
+        //console.log("scrolling up",canvasContainerRef.current.scrollTop)
+      }
+      
+      if (mouseXInContainer > 600) {
+        canvasContainerRef.current.scrollLeft += 5; // Increment, not set
+        //console.log(canvasContainerRef.current);
+        //console.log("scrolling right", canvasContainerRef.current.scrollLeft)
+      } else if (mouseXInContainer < SCROLL_THRESHOLD) {
+        canvasContainerRef.current.scrollLeft -= 5; // Decrement
+        //console.log("scrolling left", canvasContainerRef.current.scrollLeft)
+      }
+      //console.log("dsas",mouseYInContainer, canvasContainerRef.current.scrollLeft);
+    }
+    
     if (draggingId !== null) {
       const { offsetX, offsetY } = e.nativeEvent;
       setPois(prevObjects => movePOI(prevObjects, draggingId, offsetX, offsetY, offset, scale));
@@ -354,6 +468,10 @@ const FloorPlanV4 = () => {
       setIsDragging(false);
       return;
     }
+    if (tool !== 'pan' && tool !== 'select') {
+      saveToHistory();
+      console.log("oiuytre")
+    }  
     if (!isDrawing) return;
    /* if (tool === 'wall' && currentWall) {
       const dx = currentWall.end.x - currentWall.start.x;
@@ -562,6 +680,13 @@ const FloorPlanV4 = () => {
       <div className="bg-gray-100 p-4 border-b flex items-center gap-2">
         <h1 className="text-xl font-bold">Dessinateur de Plan d'Intérieur</h1>
         <div className="flex ml-auto gap-2">
+        <button
+          className="w-full px-3 py-2 rounded bg-gray-200"
+          onClick={undo}
+          disabled={currentHistoryIndex <= 0}
+        >
+          Annuler (Ctrl+Z)
+        </button>
           <button 
             className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
             onClick={() => {
@@ -787,46 +912,49 @@ const FloorPlanV4 = () => {
         </div>
 
         <div className="flex-1 overflow-auto relative">
-  <div
-    style={{
-      width: 2000,
-      height: 2000,
-      position: 'relative',
-       border: '2px solid #333'
-    }}
-    onClick={handleCanvasClick}
-  >
-    <canvas
-      ref={canvasRef}
-      width={canvasSize.width}
-      height={canvasSize.height}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      className="cursor-default"
-      style={{
-        display: 'block',
-        width: '100%',
-        height: '100%',
-        cursor:
-          nearNodePoint
-            ? 'grab'
-            : tool === 'wall' || tool === 'partition'
-            ? 'crosshair'
-            : 'default',
-      }}
-    />
-    <WallLengthPopup
-      visible={wallLengthPopup.visible}
-      x={wallLengthPopup.x}
-      y={wallLengthPopup.y}
-      initialValue={wallLengthPopup.inputValue}
-      onApply={(value) => applyWallLength(value)}
-      onCancel={() => cancelWallLengthPopup()}
-    />
-  </div>
-</div>
+          <div
+            ref={canvasContainerRef}
+            style={{
+              width: 1000,
+              height: 500,
+              position: 'relative',
+              border: '2px solid #333',
+              overflow: 'auto',
+            }}
+            onClick={handleCanvasClick}
+          >
+            <canvas
+              ref={canvasRef}
+              width={2000}
+              height={1000}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              className="cursor-default"
+              // style={{
+              //   display: 'block',
+              //   width: '80%',
+              //   height: '80%',
+              //   cursor:
+              //     nearNodePoint
+              //       ? 'grab'
+              //       : tool === 'wall' || tool === 'partition'
+              //       ? 'crosshair'
+              //       : 'default',
+              // }}
+            />
+            <WallLengthPopup
+              visible={wallLengthPopup.visible}
+              x={wallLengthPopup.x}
+              y={wallLengthPopup.y}
+              initialValue={wallLengthPopup.inputValue}
+              onApply={(value) => applyWallLength(value)}
+              onCancel={() => cancelWallLengthPopup()}
+            />
+          </div>
+          
+        </div>
 
 
           

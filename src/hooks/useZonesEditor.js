@@ -806,7 +806,7 @@ export const useFloorPlanZones=(ctx,canvasRef,tool,onChangeTool)=>{
     }
     setDragState(null)}
       else if ((tool === 'wall' || tool === 'partition') && action === 1) {
-        finishWall(tool);
+        //finishWall(tool);
       }else if(tool=="door_mode" && binderRef.current){
         setPlacedObjects(prevObjects => [...prevObjects, new Object(binderRef.current)]);
         setIsPreview(false);
